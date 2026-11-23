@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="لعبة أسئلة ومسابقات عراقية للفرق: شاشة وحدة أو كل لاعب على جواله، مع حكم أو بدونه.">
+<meta name="theme-color" content="#0b1120">
+</head>
+<body>
+<title>لعبة الأسئلة</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<script>document.documentElement.dir="rtl";document.documentElement.lang="ar";</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&family=Amiri:wght@700&display=swap">
+<style>
+/* Layout: one column "stage" — a night-sky quiz-show set with gold lettering; every screen is a card on that stage */
+:root{
+  --bg:#0b1120; --bg2:#121a2e; --card:#172036; --card2:#0f1626; --line:#2a3654;
+  --gold:#d9b44a; --gold2:#f3dc95; --ink:#efe8d4; --muted:#93a0bf;
+  --ok:#2bc79a; --okbg:#10473a; --bad:#e0604f; --badbg:#5a1d16;
+  --display:'Amiri','Traditional Arabic',serif; --body:'Tajawal','Segoe UI',Tahoma,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{min-height:100%}
+body{margin:0;background:var(--bg);background:radial-gradient(ellipse at 50% -10%,#1c2a4d 0%,var(--bg) 55%);color:var(--ink);font-family:var(--body);font-size:16px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+button,input,select{font-family:var(--body);color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--gold2);outline-offset:2px}
+.screen{max-width:980px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.center{text-align:center}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row.c{justify-content:center}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+h1.logo{font-family:var(--display);font-size:clamp(2.4rem,8vw,4.6rem);margin:0;line-height:1.1;text-align:center;background:linear-gradient(180deg,var(--gold2),var(--gold) 60%,#9c7420);-webkit-background-clip:text;background-clip:text;color:transparent}
+.eyebrow{color:var(--gold);letter-spacing:.25em;font-weight:700;font-size:.85rem;text-align:center}
+h2{font-family:var(--display);color:var(--gold2);font-size:1.6rem;margin:0;text-wrap:balance}
+.card{background:linear-gradient(165deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:20px;padding:clamp(16px,3vw,28px)}
+.label{color:var(--gold2);font-weight:800;margin:4px 0 8px}
+.btn{border:none;border-radius:999px;padding:12px 22px;font-weight:800;font-size:1rem;transition:transform .1s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:default}
+.gold{background:linear-gradient(160deg,var(--gold2),var(--gold));color:#1d1503}
+.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.ghost:hover{border-color:var(--gold)}
+.danger{background:transparent;border:1px solid var(--bad);color:#ffb0a5}
+.sm{padding:8px 14px;font-size:.85rem}
+.big{padding:16px 30px;font-size:1.15rem}
+
+/* choice tiles (setup) */
+.choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.choice{background:var(--card2);border:2px solid var(--line);border-radius:16px;padding:14px;text-align:right;display:flex;gap:12px;align-items:flex-start}
+.choice .ic{font-size:1.8rem;line-height:1}
+.choice b{display:block;font-size:1.05rem;margin-bottom:2px}
+.choice span{color:var(--muted);font-size:.85rem}
+.choice[aria-pressed="true"]{border-color:var(--gold);background:#1d2742}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:var(--card2);border:2px solid var(--line);border-radius:12px;padding:8px 14px;font-weight:800;min-width:48px}
+.chip[aria-pressed="true"]{border-color:var(--gold);color:var(--gold2);background:#1d2742}
+.names{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+.name{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.name input{flex:1;min-width:0;background:transparent;border:none;outline:none;font-weight:700;font-size:1rem}
+.dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;display:inline-block}
+.setting{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 0;border-top:1px dashed var(--line)}
+.switch{width:52px;height:28px;border-radius:999px;background:var(--line);border:none;position:relative;flex-shrink:0}
+.switch::after{content:'';position:absolute;top:3px;right:3px;width:22px;height:22px;border-radius:50%;background:#fff;transition:right .2s}
+.switch[aria-checked="true"]{background:var(--ok)}
+.switch[aria-checked="true"]::after{right:27px}
+
+/* scoreboard */
+.board{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.team{background:var(--card);border:2px solid var(--line);border-radius:14px;padding:8px 10px;text-align:center;position:relative}
+.team.turn{border-color:var(--tc);box-shadow:0 0 18px color-mix(in srgb,var(--tc) 45%,transparent)}
+.team .tn{font-weight:900;font-size:.9rem;color:var(--gold2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.team .ts{font-size:1.5rem;font-weight:900;font-variant-numeric:tabular-nums}
+.team .tag{font-size:.7rem;color:var(--tc);font-weight:800;min-height:1em}
+.team .adj{display:none;justify-content:center;gap:6px;margin-top:4px}
+.board.edit .team .adj{display:flex}
+.adj button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--card2);font-weight:900}
+
+/* categories */
+.cats{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.cat{background:linear-gradient(165deg,var(--card),var(--card2));border:2px solid var(--line);border-radius:16px;padding:14px 8px;text-align:center}
+.cat .ic{font-size:1.9rem;display:block}
+.cat b{display:block;color:var(--gold2);margin-top:4px}
+.cat span{font-size:.75rem;color:var(--muted)}
+.cat[aria-pressed="true"]{border-color:var(--gold);background:#1d2742}
+.cat.all{border-style:dashed}
+
+/* question */
+.qhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.qtag{color:var(--gold);font-weight:800;font-size:.9rem}
+.timer{display:flex;align-items:center;gap:10px}
+.tbar{flex:1;height:12px;border-radius:999px;background:var(--card2);border:1px solid var(--line);overflow:hidden}
+.tfill{height:100%;width:100%;background:linear-gradient(90deg,var(--ok),#7ef0c8);transition:width .25s linear}
+.tfill.warn{background:linear-gradient(90deg,var(--bad),#ff9b8c)}
+.tnum{font-weight:900;font-size:1.5rem;min-width:2.4em;text-align:center;color:var(--gold2);font-variant-numeric:tabular-nums}
+.icon-btn{width:42px;height:42px;border-radius:50%;border:1px solid var(--line);background:var(--card2);font-size:1rem}
+.turnline{text-align:center;font-weight:900;font-size:1.05rem}
+.turnline span{display:inline-block;padding:6px 16px;border-radius:999px;border:1px solid var(--tc);color:var(--tc);background:color-mix(in srgb,var(--tc) 12%,transparent)}
+.qtext{font-size:clamp(1.3rem,3.4vw,2.1rem);font-weight:900;line-height:1.55;text-align:center;text-wrap:balance;margin:6px 0}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:620px){.opts{grid-template-columns:1fr}}
+.opt{display:flex;gap:10px;align-items:center;background:var(--card2);border:2px solid var(--line);border-radius:14px;padding:14px;font-weight:700;font-size:clamp(1rem,1.8vw,1.2rem);text-align:right;width:100%;min-height:58px}
+.opt .lt{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:#1f2a47;display:flex;align-items:center;justify-content:center;color:var(--gold2);font-weight:900}
+button.opt:hover:not(:disabled){border-color:var(--gold)}
+.opt:disabled{cursor:default}
+.opt.gone{opacity:.15}
+.opt.right{background:var(--okbg);border-color:var(--ok);color:#fff}
+.opt.wrong{background:var(--badbg);border-color:var(--bad);color:#fff}
+.opt.mine{box-shadow:0 0 0 3px var(--gold2) inset}
+.banner{border-radius:14px;padding:12px;font-weight:900;text-align:center;font-size:1.1rem}
+.banner.ok{background:var(--okbg);color:#d9fff2}
+.banner.bad{background:var(--badbg);color:#ffe3de}
+.banner.info{background:#1d2742;color:var(--gold2)}
+.hostbox{border:1px dashed var(--gold);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.award{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.aw{border:2px solid var(--tc);background:color-mix(in srgb,var(--tc) 14%,var(--card2));border-radius:14px;padding:12px 6px;font-weight:900}
+.aw small{display:block;color:var(--gold2);font-weight:600}
+.life{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.lifebtn{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-weight:700;font-size:.85rem}
+.lifebtn:disabled{opacity:.3}
+.helper{background:var(--card2);border:1px solid var(--gold);border-radius:12px;padding:10px;color:var(--gold2);text-align:center}
+.aud{display:flex;flex-direction:column;gap:6px}
+.aud div{display:flex;align-items:center;gap:8px}
+.aud i{flex:1;height:14px;background:var(--card2);border-radius:6px;overflow:hidden;display:block}
+.aud i b{display:block;height:100%;background:var(--ok);width:0;transition:width .6s}
+.players{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.pl{border:1px solid var(--line);border-radius:999px;padding:5px 12px;font-size:.85rem;font-weight:700;background:var(--card2)}
+.pl.done{border-color:var(--gold);color:var(--gold2)}
+.pl.ok{border-color:var(--ok);background:var(--okbg)}
+.pl.bad{border-color:var(--bad);background:var(--badbg)}
+
+/* lobby */
+.code{font-size:clamp(3rem,14vw,6rem);font-weight:900;letter-spacing:.25em;color:var(--gold2);text-align:center;font-variant-numeric:tabular-nums;direction:ltr}
+.rank{display:flex;justify-content:space-between;align-items:center;background:var(--card2);border:2px solid var(--line);border-radius:14px;padding:12px 16px;font-weight:900;font-size:1.1rem}
+.rank.first{border-color:var(--gold)}
+.winner{font-family:var(--display);font-size:clamp(1.8rem,5vw,2.8rem);color:var(--gold2);text-align:center}
+.codein{font-size:2rem;text-align:center;letter-spacing:.3em;direction:ltr;background:var(--card2);border:2px solid var(--line);border-radius:14px;padding:10px;width:100%;max-width:260px}
+.textin{background:var(--card2);border:2px solid var(--line);border-radius:12px;padding:10px 12px;font-size:1rem;width:100%}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,140px);background:var(--ok);color:#06231a;font-weight:900;padding:10px 20px;border-radius:999px;transition:transform .3s;z-index:20;max-width:90vw;text-align:center}
+.toast.show{transform:translate(-50%,0)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<!-- HOME -->
+<section class="screen" id="s-home">
+  <div class="eyebrow">مسابقة معلومات · فرق وحكم وجوالات</div>
+  <h1 class="logo">لعبة الأسئلة</h1>
+  <p class="center muted" id="bankLine"></p>
+  <div class="card" id="resumeCard" hidden>
+    <div class="row" style="justify-content:space-between">
+      <div><b>عندك لعبة شغالة</b><div class="muted small" id="resumeInfo"></div></div>
+      <div class="row"><button class="btn gold" id="resumeBtn">كمّل اللعبة</button><button class="btn ghost sm" id="resetBtn">ابدأ من جديد</button></div>
+    </div>
+  </div>
+  <div class="choices">
+    <button class="choice" id="goNew"><span class="ic">🎬</span><div><b>لعبة جديدة</b><span>رتب الفرق والحكم وطريقة العرض</span></div></button>
+    <button class="choice" id="goJoin"><span class="ic">📱</span><div><b>انضم من جوالك</b><span>اكتب رمز اللعبة اللي على الشاشة</span></div></button>
+  </div>
+</section>
+
+<!-- SETUP -->
+<section class="screen" id="s-setup" hidden>
+  <h2>ترتيب اللعبة</h2>
+  <div class="card">
+    <div class="label">وين تنعرض الأسئلة؟</div>
+    <div class="choices" id="dispChoices">
+      <button class="choice" data-v="one"><span class="ic">📺</span><div><b>شاشة وحدة</b><span>تلفزيون أو جوال واحد للكل، الفرق تجاوب بالدور</span></div></button>
+      <button class="choice" data-v="phones"><span class="ic">📱</span><div><b>كل لاعب على جواله</b><span>الكل يجاوب بنفس الوقت، والأسرع ياخذ نقاط أكثر</span></div></button>
+    </div>
+    <div class="label" style="margin-top:14px">أكو حكم؟</div>
+    <div class="choices" id="hostChoices">
+      <button class="choice" data-v="0"><span class="ic">🤖</span><div><b>بدون حكم</b><span>اللعبة تصحح وتحسب النقاط وحدها</span></div></button>
+      <button class="choice" data-v="1"><span class="ic">🧑‍⚖️</span><div><b>مع حكم</b><span>الحكم يشوف الجواب ويتحكم بالنقاط والأسئلة</span></div></button>
+    </div>
+    <div class="label" style="margin-top:14px">عدد الفرق</div>
+    <div class="chips" id="teamCount"></div>
+    <div class="names" id="teamNames" style="margin-top:10px"></div>
+    <div class="label" style="margin-top:14px">الإعدادات</div>
+    <div class="setting"><span>وقت كل سؤال</span><div class="chips" id="timeChips"></div></div>
+    <div class="setting"><span>عدد أسئلة الجولة</span><div class="chips" id="roundChips"></div></div>
+    <div class="setting" id="lifeRow"><span>وسائل المساعدة (احذف إجابتين، اتصال بصديق، رأي الجمهور)</span><button class="switch" role="switch" id="lifeSw" aria-label="وسائل المساعدة"></button></div>
+    <div class="setting" id="hideRow"><span>أخفي الجواب عن الحكم حتى يضغط «أظهر»<br><span class="muted small">شغّله إذا جوال الحكم معروض على التلفزيون</span></span><button class="switch" role="switch" id="hideSw" aria-label="إخفاء الجواب"></button></div>
+    <div class="row c" style="margin-top:14px"><button class="btn gold big" id="setupGo">التالي: اختيار القسم</button><button class="btn ghost" data-go="home">رجوع</button></div>
+  </div>
+</section>
+
+<!-- LOBBY (phones mode, board) -->
+<section class="screen" id="s-lobby" hidden>
+  <div class="card center">
+    <div class="eyebrow">رمز اللعبة</div>
+    <div class="code" id="lobbyCode">----</div>
+    <p class="muted">كل لاعب يفتح نفس الرابط من جواله، يضغط «انضم من جوالك» ويكتب الرمز</p>
+    <div class="banner bad" id="lobbyErr" hidden></div>
+    <div class="label" id="lobbyCount">اللاعبين: 0</div>
+    <div id="lobbyTeams" class="board"></div>
+    <div class="row c" style="margin-top:14px"><button class="btn gold big" id="lobbyGo">اختيار القسم</button><button class="btn ghost" id="lobbyBack">رجوع للإعدادات</button></div>
+  </div>
+</section>
+
+<!-- ROUND PICKER -->
+<section class="screen" id="s-pick" hidden>
+  <div class="board" id="pickBoard"></div>
+  <div class="row" style="justify-content:space-between">
+    <h2>الجولة <span id="roundNo">1</span>: اختار القسم</h2>
+    <div class="row"><button class="btn ghost sm" id="editScores">✏️ تعديل النقاط</button><button class="btn ghost sm" id="endGame">🏆 إنهاء وإعلان الفائز</button></div>
+  </div>
+  <div class="cats" id="cats"></div>
+  <div class="card">
+    <div class="label">الصعوبة</div>
+    <div class="chips" id="lvChips"></div>
+    <div class="row c" style="margin-top:14px"><button class="btn gold big" id="startRound">ابدأ الجولة</button></div>
+  </div>
+</section>
+
+<!-- QUESTION (board / single screen / host) -->
+<section class="screen" id="s-q" hidden>
+  <div class="board" id="qBoard"></div>
+  <div class="card" style="display:flex;flex-direction:column;gap:12px">
+    <div class="qhead"><div class="qtag" id="qTag"></div><button class="btn ghost sm" id="qExit">إيقاف الجولة</button></div>
+    <div class="timer"><button class="icon-btn" id="tPlay" aria-label="تشغيل أو إيقاف العداد">⏸</button><div class="tbar"><div class="tfill" id="tFill"></div></div><div class="tnum" id="tNum">30</div></div>
+    <div class="turnline" id="turnLine"></div>
+    <div class="qtext" id="qText"></div>
+    <div class="helper" id="helper" hidden></div>
+    <div class="opts" id="opts"></div>
+    <div class="players" id="answerers"></div>
+    <div class="banner" id="qBanner" hidden></div>
+    <div class="life" id="life"></div>
+    <div class="hostbox" id="hostBox" hidden>
+      <div class="row" style="justify-content:space-between"><b class="small">لوحة الحكم</b><button class="btn ghost sm" id="showAns">👁 أظهر الجواب</button></div>
+      <div class="banner info" id="hostAns" hidden></div>
+      <div id="awardWrap"><div class="small muted" style="margin-bottom:6px">من جاوب صح؟ اضغط اسم الفريق</div><div class="award" id="award"></div></div>
+      <div class="row c"><button class="btn ghost sm" id="hNobody">✘ ولا أحد</button><button class="btn ghost sm" id="hSkip">🔄 بدّل السؤال</button><button class="btn ghost sm" id="hUndo">↶ تراجع</button><button class="btn ghost sm" id="hReveal">اكشف الجواب للكل</button></div>
+    </div>
+    <div class="row c"><button class="btn gold big" id="qNext" hidden>السؤال التالي</button></div>
+  </div>
+</section>
+
+<!-- ROUND / FINAL RESULTS -->
+<section class="screen" id="s-res" hidden>
+  <div class="card" style="display:flex;flex-direction:column;gap:10px">
+    <div class="winner" id="resTitle"></div>
+    <div class="center muted" id="resSub"></div>
+    <div id="resList" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div id="resPlayers" class="players"></div>
+    <div class="row c" style="margin-top:10px" id="resBtns"></div>
+  </div>
+</section>
+
+<!-- PLAYER (phone) -->
+<section class="screen" id="s-join" hidden>
+  <div class="card center" style="display:flex;flex-direction:column;gap:12px;align-items:center">
+    <h2>انضم للعبة</h2>
+    <div class="banner bad" id="joinErr" hidden style="width:100%"></div>
+    <div id="joinStep1" style="display:flex;flex-direction:column;gap:12px;align-items:center;width:100%">
+      <label for="codeIn" class="muted">رمز اللعبة (4 أرقام على الشاشة)</label>
+      <input id="codeIn" class="codein" inputmode="numeric" maxlength="4" autocomplete="off">
+      <button class="btn gold big" id="joinFind">دوّر على اللعبة</button>
+    </div>
+    <div id="joinStep2" hidden style="display:flex;flex-direction:column;gap:12px;align-items:center;width:100%;max-width:420px">
+      <label for="nameIn" class="muted">اسمك</label>
+      <input id="nameIn" class="textin" maxlength="16" autocomplete="off">
+      <div class="muted">اختار فريقك</div>
+      <div class="chips" id="joinTeams" style="justify-content:center"></div>
+      <button class="btn gold big" id="joinGo">ادخل</button>
+    </div>
+    <button class="btn ghost sm" data-go="home">رجوع</button>
+  </div>
+</section>
+
+<section class="screen" id="s-player" hidden>
+  <div class="row" style="justify-content:space-between"><b id="meLine"></b><span class="muted small" id="meScore"></span></div>
+  <div class="card" style="display:flex;flex-direction:column;gap:12px" id="pCard"></div>
+</section>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script src="questions.js"></script>
+<script>
+"use strict";
+const DATA = window.QDATA || {};
+const LEVELS = ['easy','medium','hard','expert'];
+const LV = { easy:'سهل', medium:'متوسط', hard:'صعب', expert:'صعب جداً', ramp:'متدرج' };
+const PTS = { easy:100, medium:250, hard:500, expert:1000 };
+const LET = ['أ','ب','ج','د'];
+const COLORS = ['#4f8ff7','#f08a3e','#36c46f','#e2479b','#a66cf0','#e3c23a'];
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const shuffle = a => { a = a.slice(); for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+const load = (k,d) => { try { const v=localStorage.getItem(k); return v?JSON.parse(v):d; } catch(e){ return d; } };
+const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
+
+/* ---------------- persistent game state (board device) ---------------- */
+const DEF = () => ({ cfg:{ disp:'one', host:false, teams:['الفريق الأول','الفريق الثاني'], time:30, per:10, life:true, hide:false },
+  scores:[0,0], round:1, players:{}, history:[], ll:{}, played:{}, code:null, active:false });
+let S = load('qa_game_v1', null) || DEF();
+let seen = load('qa_seen_v1', {});
+const persist = () => save('qa_game_v1', S);
+
+/* ---------------- screens ---------------- */
+function show(id){ document.querySelectorAll('.screen').forEach(s => s.hidden = s.id !== 's-'+id); window.scrollTo(0,0); }
+document.querySelectorAll('[data-go]').forEach(b => b.onclick = () => goHome());
+let toastT;
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),1800); }
+let actx;
+function tone(f,d){ try{ actx=actx||new (window.AudioContext||window.webkitAudioContext)(); const o=actx.createOscillator(),g=actx.createGain(); o.frequency.value=f; o.connect(g); g.connect(actx.destination); g.gain.setValueAtTime(.18,actx.currentTime); g.gain.exponentialRampToValueAtTime(.001,actx.currentTime+d); o.start(); o.stop(actx.currentTime+d);}catch(e){} }
+const sndOk = () => { tone(660,.12); setTimeout(()=>tone(880,.2),120); };
+const sndBad = () => tone(200,.4);
+
+/* ---------------- home ---------------- */
+function goHome(){
+  stopTimer();
+  let total=0; for (const c in DATA) LEVELS.forEach(l => total += DATA[c][l].length);
+  $('bankLine').textContent = `${Object.keys(DATA).length} قسم · ${total} سؤال · ما يتكرر السؤال إلا بعد ما تخلص أسئلة المستوى`;
+  $('resumeCard').hidden = !S.active;
+  if (S.active) $('resumeInfo').textContent = S.cfg.teams.map((t,i)=>`${t}: ${S.scores[i]}`).join(' · ');
+  show('home');
+}
+$('goNew').onclick = () => { if (S.active) { S = Object.assign(DEF(), { cfg:S.cfg }); S.scores = S.cfg.teams.map(()=>0); } openSetup(); };
+$('resumeBtn').onclick = () => { if (S.cfg.disp==='phones') openLobby(); else openPick(); };
+$('resetBtn').onclick = () => { const cfg=S.cfg; S=DEF(); S.cfg=cfg; persist(); goHome(); };
+$('goJoin').onclick = () => openJoin();
+
+/* ---------------- setup ---------------- */
+function pressGroup(container, value, attr='v'){ container.querySelectorAll('[data-'+attr+']').forEach(b => b.setAttribute('aria-pressed', String(b.dataset[attr]===String(value)))); }
+function chipRow(el, values, cur, fmt, onPick){ el.innerHTML=''; values.forEach(v => { const b=document.createElement('button'); b.className='chip'; b.textContent=fmt(v); b.setAttribute('aria-pressed', String(v===cur)); b.onclick=()=>onPick(v); el.appendChild(b); }); }
+function openSetup(){ renderSetup(); show('setup'); }
+function collectNames(){ S.cfg.teams = S.cfg.teams.map((t,i) => { const el=$('tn'+i); return el ? (el.value.trim() || `الفريق ${i+1}`) : t; }); }
+function renderSetup(){
+  const c=S.cfg;
+  pressGroup($('dispChoices'), c.disp); pressGroup($('hostChoices'), c.host?1:0);
+  $('dispChoices').querySelectorAll('button').forEach(b => b.onclick = () => { collectNames(); c.disp=b.dataset.v; renderSetup(); });
+  $('hostChoices').querySelectorAll('button').forEach(b => b.onclick = () => { collectNames(); c.host=b.dataset.v==='1'; renderSetup(); });
+  chipRow($('teamCount'), [2,3,4,5,6], c.teams.length, v=>v, n => { collectNames(); while(c.teams.length<n) c.teams.push(`الفريق ${c.teams.length+1}`); c.teams.length=n; renderSetup(); });
+  const nw=$('teamNames'); nw.innerHTML='';
+  c.teams.forEach((t,i) => { const d=document.createElement('label'); d.className='name'; d.innerHTML=`<span class="dot" style="background:${COLORS[i]}"></span><input id="tn${i}" maxlength="18" aria-label="اسم الفريق ${i+1}">`; d.querySelector('input').value=t; nw.appendChild(d); });
+  chipRow($('timeChips'), [15,20,30,45,60], c.time, v=>v+' ث', v => { collectNames(); c.time=v; renderSetup(); });
+  chipRow($('roundChips'), [5,10,15,20], c.per, v=>v, v => { collectNames(); c.per=v; renderSetup(); });
+  $('lifeRow').hidden = c.disp!=='one';
+  $('hideRow').hidden = !c.host;
+  $('lifeSw').setAttribute('aria-checked', String(c.life)); $('lifeSw').onclick = () => { collectNames(); c.life=!c.life; renderSetup(); };
+  $('hideSw').setAttribute('aria-checked', String(c.hide)); $('hideSw').onclick = () => { collectNames(); c.hide=!c.hide; renderSetup(); };
+}
+$('setupGo').onclick = () => {
+  collectNames();
+  if (S.scores.length !== S.cfg.teams.length) S.scores = S.cfg.teams.map((_,i)=>S.scores[i]||0);
+  S.active = true; persist();
+  if (S.cfg.disp==='phones') openLobby(); else openPick();
+};
+
+/* ---------------- scoreboard ---------------- */
+let editing=false;
+function renderBoard(el, turnIdx){
+  el.innerHTML=''; el.classList.toggle('edit', editing);
+  const max=Math.max(...S.scores);
+  S.cfg.teams.forEach((t,i) => {
+    const d=document.createElement('div'); d.className='team'+(i===turnIdx?' turn':''); d.style.setProperty('--tc', COLORS[i]);
+    d.innerHTML=`<div class="tag">${i===turnIdx?'🎯 الدور':''}</div><div class="tn"><span class="dot" style="background:${COLORS[i]}"></span> ${max>0&&S.scores[i]===max?'👑 ':''}${esc(t)}</div><div class="ts">${S.scores[i]}</div><div class="adj"><button data-d="-50" aria-label="ناقص 50">−</button><button data-d="50" aria-label="زائد 50">+</button></div>`;
+    d.querySelectorAll('.adj button').forEach(b => b.onclick = () => { S.scores[i]=Math.max(0,S.scores[i]+Number(b.dataset.d)); persist(); renderBoard(el, turnIdx); pushState(); });
+    el.appendChild(d);
+  });
+}
+
+/* ---------------- smart question picker ---------------- */
+function remaining(cat, lv){ const s=seen[cat+'_'+lv]||[]; return DATA[cat][lv].filter(q=>!s.includes(q[0])).length; }
+function pick(cat, lv, avoidQ){
+  const key=cat+'_'+lv, pool=DATA[cat][lv];
+  let s=(seen[key]||[]).filter(q=>pool.some(p=>p[0]===q));
+  let fresh=pool.filter(p=>!s.includes(p[0]) && p[0]!==avoidQ);
+  if (!fresh.length){ s=[]; fresh=pool.filter(p=>p[0]!==avoidQ); }
+  const it=fresh[Math.floor(Math.random()*fresh.length)];
+  s.push(it[0]); seen[key]=s; save('qa_seen_v1', seen);
+  const [q, correct, ...wrong]=it; const opts=shuffle([correct, ...wrong]);
+  return { cat, lv, q, opts, a:opts.indexOf(correct), id: Math.random().toString(36).slice(2,8) };
+}
+function smartCat(prev, lv){
+  const cats=Object.keys(DATA).filter(c=>c!==prev);
+  const w=cats.map(c=>remaining(c,lv)+1); let r=Math.random()*w.reduce((a,b)=>a+b,0);
+  for (let i=0;i<cats.length;i++){ r-=w[i]; if (r<=0) return cats[i]; } return cats[0];
+}
+function levelFor(k,n,lv){ return lv==='ramp' ? LEVELS[Math.min(3, Math.floor(k*4/n))] : lv; }
+
+/* ---------------- round picker ---------------- */
+let pickCat='all', pickLv='ramp';
+function openPick(){
+  editing=false; $('roundNo').textContent=S.round;
+  renderBoard($('pickBoard'), -1);
+  const g=$('cats'); g.innerHTML='';
+  const all=document.createElement('button'); all.className='cat all'; all.dataset.c='all';
+  all.innerHTML='<span class="ic">🎲</span><b>خليط</b><span>من كل الأقسام</span>'; g.appendChild(all);
+  for (const [k,c] of Object.entries(DATA)){
+    const left=LEVELS.reduce((s,l)=>s+remaining(k,l),0);
+    const b=document.createElement('button'); b.className='cat'; b.dataset.c=k;
+    b.innerHTML=`<span class="ic">${c.icon}</span><b>${esc(c.name)}</b><span>${left} سؤال جديد${S.played[k]?' · لُعب '+S.played[k]+'×':''}</span>`;
+    g.appendChild(b);
+  }
+  g.querySelectorAll('.cat').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.c===pickCat)); b.onclick=()=>{ pickCat=b.dataset.c; g.querySelectorAll('.cat').forEach(x=>x.setAttribute('aria-pressed', String(x===b))); }; });
+  chipRow($('lvChips'), ['ramp',...LEVELS], pickLv, v => v==='ramp' ? 'متدرج (سهل ← صعب جداً)' : `${LV[v]} · ${PTS[v]}`, v => { pickLv=v; openPickChips(); });
+  show('pick'); pushState();
+}
+function openPickChips(){ chipRow($('lvChips'), ['ramp',...LEVELS], pickLv, v => v==='ramp' ? 'متدرج (سهل ← صعب جداً)' : `${LV[v]} · ${PTS[v]}`, v => { pickLv=v; openPickChips(); }); }
+$('editScores').onclick = () => { editing=!editing; renderBoard($('pickBoard'), -1); };
+$('endGame').onclick = () => showResults(true);
+$('startRound').onclick = startRound;
+
+/* ---------------- round engine ---------------- */
+let R=null; // { list, i, turn, gains:[], phase, answered, life:{} }
+function startRound(){
+  const n=S.cfg.per, list=[]; let prev=null;
+  for (let k=0;k<n;k++){ const lv=levelFor(k,n,pickLv); const cat=pickCat==='all'?smartCat(prev,lv):pickCat; prev=cat; list.push(pick(cat,lv)); }
+  if (pickCat!=='all') S.played[pickCat]=(S.played[pickCat]||0)+1;
+  R={ list, i:0, turn:(S.round-1)%S.cfg.teams.length, start:S.scores.slice(), pStart:JSON.parse(JSON.stringify(S.players)) };
+  persist(); showQuestion();
+}
+function cur(){ return R.list[R.i]; }
+const isPhones = () => S.cfg.disp==='phones';
+
+function showQuestion(){
+  const q=cur(); R.phase='q'; R.done=false; R.gone=[]; R.helper=null; R.qStart=Date.now();
+  show('q');
+  const c=DATA[q.cat];
+  $('qTag').textContent=`${c.icon} ${c.name} · ${LV[q.lv]} · ${PTS[q.lv]} نقطة · سؤال ${R.i+1} من ${R.list.length}`;
+  $('qText').textContent=q.q;
+  $('qBanner').hidden=true; $('qNext').hidden=true; $('helper').hidden=true;
+  const oneNoHost = !isPhones() && !S.cfg.host;
+  // turn line (single screen only)
+  const tl=$('turnLine');
+  if (!isPhones()){ tl.hidden=false; tl.style.setProperty('--tc', COLORS[R.turn]); tl.innerHTML=`<span>دور: ${esc(S.cfg.teams[R.turn])}</span>`; } else tl.hidden=true;
+  renderOpts(oneNoHost);
+  renderBoard($('qBoard'), isPhones()?-1:R.turn);
+  // lifelines (single screen)
+  renderLife();
+  // host box
+  const hb=$('hostBox'); hb.hidden=!S.cfg.host;
+  if (S.cfg.host){
+    $('hostAns').innerHTML=`✔ الجواب: ${LET[q.a]}) <bdi>${esc(q.opts[q.a])}</bdi>`;
+    $('hostAns').hidden=S.cfg.hide; $('showAns').hidden=!S.cfg.hide;
+    $('awardWrap').hidden=isPhones(); $('hNobody').hidden=isPhones(); $('hReveal').hidden=!isPhones();
+    $('hUndo').disabled=!S.history.length;
+    if (!isPhones()){ const aw=$('award'); aw.innerHTML=''; S.cfg.teams.forEach((t,i)=>{ const b=document.createElement('button'); b.className='aw'; b.style.setProperty('--tc',COLORS[i]); b.innerHTML=`✔ ${esc(t)}<small>+${PTS[q.lv]}${i===R.turn?' · صاحب الدور':''}</small>`; b.onclick=()=>hostAward(i); aw.appendChild(b); }); }
+  }
+  renderAnswerers();
+  startTimer(S.cfg.time);
+  pushState();
+}
+function renderOpts(clickable){
+  const q=cur(), o=$('opts'); o.innerHTML='';
+  q.opts.forEach((t,i)=>{
+    const b=document.createElement(clickable?'button':'div'); b.className='opt'; b.id='op'+i;
+    b.innerHTML=`<span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi>`;
+    if (R.gone.includes(i)) b.classList.add('gone');
+    if (clickable) b.onclick=()=>singleAnswer(i);
+    o.appendChild(b);
+  });
+  if (S.cfg.host && !S.cfg.hide) $('op'+q.a).classList.add('right');
+}
+function lockOpts(){ $('opts').querySelectorAll('button').forEach(b=>b.disabled=true); }
+
+/* single screen, no host: the team on turn taps an answer */
+function singleAnswer(i){
+  if (R.phase!=='q') return; R.phase='rev'; stopTimer(); lockOpts();
+  const q=cur(), ok=i===q.a; const t=R.turn;
+  $('op'+q.a).classList.add('right'); if (!ok) $('op'+i).classList.add('wrong');
+  let gain=0;
+  if (ok){ gain=Math.round(PTS[q.lv]*(0.5+0.5*tLeft/S.cfg.time)); S.scores[t]+=gain; sndOk(); } else sndBad();
+  S.history.push({ team:t, pts:gain }); persist();
+  banner(ok?'ok':'bad', ok?`✔ صح! ${S.cfg.teams[t]} +${gain} نقطة`:`✘ غلط. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`);
+  renderBoard($('qBoard'), R.turn); $('qNext').hidden=false; renderLife(true);
+}
+function banner(kind, text){ const b=$('qBanner'); b.className='banner '+kind; b.textContent=text; b.hidden=false; }
+
+/* host, single screen */
+function hostAward(i){
+  const q=cur(), p=PTS[q.lv]; S.scores[i]+=p; S.history.push({team:i, pts:p}); persist(); sndOk();
+  toast(`+${p} لـ ${S.cfg.teams[i]}`); nextQuestion();
+}
+$('hNobody').onclick = () => { S.history.push({team:-1, pts:0}); persist(); nextQuestion(); };
+$('hSkip').onclick = () => { const q=cur(); R.list[R.i]=pick(q.cat,q.lv,q.q); showQuestion(); };
+$('hUndo').onclick = () => {
+  const h=S.history.pop(); if (!h) return;
+  if (h.team>=0) S.scores[h.team]=Math.max(0,S.scores[h.team]-h.pts);
+  if (h.players) for (const k in h.players) if (S.players[k]) S.players[k].pts=Math.max(0,S.players[k].pts-h.players[k]);
+  persist(); renderBoard($('qBoard'), isPhones()?-1:R.turn); $('hUndo').disabled=!S.history.length; toast('تم التراجع عن آخر نقاط'); pushState();
+};
+$('showAns').onclick = () => { $('hostAns').hidden=false; $('showAns').hidden=true; $('op'+cur().a).classList.add('right'); };
+$('hReveal').onclick = () => { if (R.phase==='q') phonesReveal(); };
+$('qNext').onclick = () => nextQuestion();
+$('qExit').onclick = () => { stopTimer(); clearTimeout(autoT); R=null; openPick(); };
+
+function nextQuestion(){
+  clearTimeout(autoT);
+  if (!isPhones()) R.turn=(R.turn+1)%S.cfg.teams.length;
+  R.i++;
+  if (R.i>=R.list.length){ S.round++; persist(); showResults(false); return; }
+  showQuestion();
+}
+
+/* lifelines: single screen only, once per team per game */
+function renderLife(off){
+  const L=$('life'); L.innerHTML='';
+  if (isPhones() || !S.cfg.life) return;
+  const used=S.ll[R.turn]||{};
+  [['fifty','✂️ احذف إجابتين'],['phone','📞 اتصال بصديق'],['aud','👥 رأي الجمهور']].forEach(([k,t])=>{
+    const b=document.createElement('button'); b.className='lifebtn'; b.textContent=t; b.disabled=!!used[k]||off||R.phase!=='q';
+    b.onclick=()=>useLife(k); L.appendChild(b);
+  });
+}
+function useLife(k){
+  const q=cur(); S.ll[R.turn]=S.ll[R.turn]||{}; S.ll[R.turn][k]=true; persist();
+  const wrong=[0,1,2,3].filter(i=>i!==q.a && !R.gone.includes(i));
+  const h=$('helper');
+  if (k==='fifty'){ R.gone=shuffle(wrong).slice(0,2); R.gone.forEach(i=>{ const e=$('op'+i); e.classList.add('gone'); e.disabled=true; }); }
+  if (k==='phone'){ const s=Math.random()<.75?q.a:shuffle(wrong)[0]; h.textContent=`📞 صديقك يكول: «أظن ${LET[s]}) ${q.opts[s]}... بس مو متأكد»`; h.hidden=false; }
+  if (k==='aud'){
+    const p=[0,0,0,0], live=[0,1,2,3].filter(i=>!R.gone.includes(i)); p[q.a]=45+Math.floor(Math.random()*26); let rem=100-p[q.a];
+    const others=live.filter(i=>i!==q.a); others.forEach((i,n)=>{ if(n===others.length-1) p[i]=rem; else { const s=Math.floor(Math.random()*(rem+1)/(others.length-n)); p[i]=s; rem-=s; } });
+    h.innerHTML='<div class="aud">'+live.map(i=>`<div><b>${LET[i]}</b><i><b style="width:${p[i]}%"></b></i><span>${p[i]}%</span></div>`).join('')+'</div>'; h.hidden=false;
+  }
+  renderLife();
+}
+
+/* ---------------- timer ---------------- */
+let tLeft=30, tInt=null, tRun=false;
+function startTimer(sec){ stopTimer(); tLeft=sec; drawTimer(); tRun=true; $('tPlay').textContent='⏸'; tInt=setInterval(tick,1000); }
+function stopTimer(){ clearInterval(tInt); tRun=false; const p=$('tPlay'); if(p) p.textContent='▶'; }
+function tick(){ tLeft--; drawTimer(); if (tLeft<=3&&tLeft>0) tone(700,.07); if (tLeft<=0){ stopTimer(); timeUp(); } }
+function drawTimer(){ $('tNum').textContent=Math.max(0,tLeft); const f=$('tFill'); f.style.width=Math.max(0,tLeft/S.cfg.time*100)+'%'; f.classList.toggle('warn', tLeft<=5); }
+$('tPlay').onclick = () => { if (tRun) stopTimer(); else if (tLeft>0 && R && R.phase==='q'){ tRun=true; $('tPlay').textContent='⏸'; tInt=setInterval(tick,1000); } };
+function timeUp(){
+  if (!R || R.phase!=='q') return;
+  tone(300,.6);
+  if (isPhones()) { phonesReveal(); return; }
+  if (!S.cfg.host){ R.phase='rev'; lockOpts(); const q=cur(); $('op'+q.a).classList.add('right'); S.history.push({team:R.turn,pts:0}); persist(); banner('bad',`⏰ خلص الوقت. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`); $('qNext').hidden=false; renderLife(true); }
+  else toast('⏰ خلص الوقت');
+}
+
+/* ---------------- results ---------------- */
+function showResults(final){
+  stopTimer();
+  const order=S.cfg.teams.map((t,i)=>({t,i,s:S.scores[i],g:R?S.scores[i]-R.start[i]:0})).sort((a,b)=>b.s-a.s);
+  const tie=order.length>1 && order[0].s===order[1].s;
+  $('resTitle').textContent = final ? (tie?'🤝 تعادل على المركز الأول':`🏆 الفائز: ${order[0].t}`) : `نهاية الجولة ${S.round-1}`;
+  $('resSub').textContent = final ? 'النتيجة النهائية لكل الجولات' : (tie?'الفرق متعادلة بالمجموع لحد الآن':`${order[0].t} متقدم بالمجموع`);
+  const medals=['🥇','🥈','🥉'];
+  $('resList').innerHTML=order.map((o,k)=>`<div class="rank ${k===0?'first':''}"><span>${medals[k]||'🎖'} <span class="dot" style="background:${COLORS[o.i]}"></span> ${esc(o.t)}</span><span>${o.s}${!final&&R?` <small class="muted">(+${o.g})</small>`:''}</span></div>`).join('');
+  const pl=Object.values(S.players).sort((a,b)=>b.pts-a.pts).slice(0,10);
+  $('resPlayers').innerHTML = isPhones()&&pl.length ? pl.map((p,k)=>`<span class="pl ${k===0?'done':''}">${k===0?'⭐ ':''}${esc(p.n)} · ${p.pts}</span>`).join('') : '';
+  const bt=$('resBtns'); bt.innerHTML='';
+  const add=(t,cls,fn)=>{ const b=document.createElement('button'); b.className='btn '+cls; b.textContent=t; b.onclick=fn; bt.appendChild(b); };
+  if (final){ add('رجوع وكمّل اللعب','ghost',()=>openPick()); add('لعبة جديدة (تصفير النقاط)','danger',()=>{ const cfg=S.cfg, code=S.code; S=DEF(); S.cfg=cfg; S.code=code; S.scores=cfg.teams.map(()=>0); S.active=true; persist(); openPick(); }); }
+  else { add('الجولة الجاية','gold big',()=>openPick()); add('🏆 إنهاء وإعلان الفائز','ghost',()=>showResults(true)); }
+  R=null; show('res'); RES={final}; pushState();
+}
+let RES=null;
+
+/* =========================================================
+   PHONES MODE — live room. The board publishes the game state in its
+   presence; each phone publishes its name, team and answer in its own.
+   ========================================================= */
+let roomApi=null, room=null, roomTried=false;
+async function getRoomApi(){
+  if (roomTried) return roomApi; roomTried=true;
+  try { roomApi = (window.claude && window.claude.use) ? await window.claude.use('room') : null; } catch(e){ roomApi=null; }
+  return roomApi;
+}
+const peersNow = () => room ? room.peers() : [];
+const playerPeers = () => peersNow().filter(p => !p.sameTab && p.presence && p.presence.r==='p');
+
+/* board side */
+async function openLobby(){
+  if (!S.code){ S.code=String(1000+Math.floor(Math.random()*9000)); persist(); }
+  $('lobbyCode').textContent=S.code; show('lobby');
+  $('lobbyErr').hidden=true;
+  const api=await getRoomApi();
+  if (!api){ $('lobbyErr').textContent='الجوالات ما تكدر تتصل بهذي الصفحة هنا. هذا الوضع يشتغل للي مسجلين دخول ومدعوين للصفحة، أو بعد ما ننقل اللعبة لموقعك. تكدر تلعب بوضع «شاشة وحدة».'; $('lobbyErr').hidden=false; return; }
+  try {
+    if (!room || room.name!=='quiz-'+S.code){ if (room) try{ await room.leave(); }catch(e){} room=await api.join('quiz-'+S.code); room.onPeers(onBoardPeers); }
+    pushState(); renderLobby();
+  } catch(e){ $('lobbyErr').textContent='ما كدرنا نفتح الغرفة، جرّب مرة ثانية بعد شوي.'; $('lobbyErr').hidden=false; }
+}
+$('lobbyGo').onclick = () => openPick();
+$('lobbyBack').onclick = () => openSetup();
+function renderLobby(){
+  const ps=playerPeers(); $('lobbyCount').textContent=`اللاعبين: ${ps.length}`;
+  const el=$('lobbyTeams'); el.innerHTML='';
+  S.cfg.teams.forEach((t,i)=>{ const mem=ps.filter(p=>p.presence.t===i).map(p=>esc(String(p.presence.n||'لاعب').slice(0,16)));
+    const d=document.createElement('div'); d.className='team'; d.style.setProperty('--tc',COLORS[i]);
+    d.innerHTML=`<div class="tn"><span class="dot" style="background:${COLORS[i]}"></span> ${esc(t)}</div><div class="small">${mem.join('، ')||'<span class="muted">ماكو أحد بعد</span>'}</div>`; el.appendChild(d); });
+}
+function onBoardPeers(){
+  if (!$('s-lobby').hidden) renderLobby();
+  if (R && R.phase==='q' && isPhones()){
+    renderAnswerers();
+    const ps=playerPeers();
+    if (ps.length && ps.every(p=>p.presence.a && p.presence.a.q===cur().id)) phonesReveal();
+  }
+}
+function renderAnswerers(){
+  const el=$('answerers'); el.innerHTML='';
+  if (!isPhones() || !R) return;
+  const q=cur(), ps=playerPeers();
+  el.innerHTML=ps.map(p=>{ const a=p.presence.a, has=a&&a.q===q.id; let cls=has?'done':'';
+    if (R.phase==='rev' && has) cls = a.i===q.a ? 'ok' : 'bad';
+    return `<span class="pl ${cls}">${has?(R.phase==='rev'?(a.i===q.a?'✔ ':'✘ '):'✓ '):''}${esc(String(p.presence.n||'لاعب').slice(0,16))}</span>`; }).join('') || '<span class="muted small">ماكو لاعبين متصلين</span>';
+}
+let autoT;
+function phonesReveal(){
+  if (R.phase!=='q') return; R.phase='rev'; stopTimer();
+  const q=cur(), limit=S.cfg.time*1000, best={}, gains={};
+  for (const p of playerPeers()){
+    const a=p.presence.a; if (!a || a.q!==q.id || a.i!==q.a) continue;
+    const g=Math.round(PTS[q.lv]*(0.5+0.5*Math.max(0,1-(Number(a.ms)||limit)/limit)));
+    const key=p.peer, team=Number(p.presence.t)||0;
+    S.players[key]=S.players[key]||{n:String(p.presence.n||'لاعب').slice(0,16),t:team,pts:0};
+    S.players[key].pts+=g; gains[key]=g;
+    best[team]=Math.max(best[team]||0,g);
+  }
+  for (const t in best) S.scores[t]+=best[t];
+  S.history.push({ team:-1, pts:0, players:gains, teams:best });
+  // keep undo correct for teams too
+  const last=S.history[S.history.length-1]; last.undoTeams=best;
+  persist(); R.lastGains=gains;
+  $('op'+q.a).classList.add('right'); renderAnswerers(); renderBoard($('qBoard'),-1);
+  const n=Object.keys(gains).length;
+  banner(n?'ok':'bad', `الجواب: ${LET[q.a]}) ${q.opts[q.a]} · ${n} جاوبوا صح`);
+  sndOk();
+  if (S.cfg.host){ $('qNext').hidden=false; } else { $('qNext').hidden=false; autoT=setTimeout(()=>{ if (R && R.phase==='rev') nextQuestion(); }, 6000); }
+  pushState();
+}
+/* undo for phones rounds also removes team bonuses */
+const _undo=$('hUndo').onclick;
+$('hUndo').onclick=()=>{ const h=S.history[S.history.length-1]; if (h && h.undoTeams) for (const t in h.undoTeams) S.scores[t]=Math.max(0,S.scores[t]-h.undoTeams[t]); _undo(); };
+
+function boardState(){
+  const base={ teams:S.cfg.teams, sc:S.scores, code:S.code };
+  if (R && !$('s-q').hidden){
+    const q=cur();
+    const st={ ...base, ph:R.phase, id:q.id, q:q.q, o:q.opts, lv:q.lv, cat:DATA[q.cat].name, n:R.i+1, of:R.list.length, tl:S.cfg.time };
+    if (R.phase==='rev'){ st.a=q.a; st.g=R.lastGains||{}; }
+    return st;
+  }
+  if (!$('s-res').hidden) return { ...base, ph:RES&&RES.final?'end':'round', top:Object.entries(S.players).sort((a,b)=>b[1].pts-a[1].pts).slice(0,8).map(([k,v])=>[k,v.n,v.pts]) };
+  return { ...base, ph:'lobby' };
+}
+function pushState(){
+  if (!room || !isPhones()) return;
+  const st=boardState();
+  room.presence({ r:'b', s:st }).catch(()=>{});
+}
+
+/* ---------------- phone (player) side ---------------- */
+let me={ code:'', name:'', team:0 }, boardPeer=null, lastSt=null, myAns=null, seenQ={};
+function openJoin(){ $('joinErr').hidden=true; $('joinStep1').hidden=false; $('joinStep2').hidden=true; $('codeIn').value=''; show('join'); }
+function joinErr(t){ $('joinErr').textContent=t; $('joinErr').hidden=false; }
+$('joinFind').onclick = async () => {
+  const code=$('codeIn').value.replace(/\D/g,'');
+  if (code.length!==4) return joinErr('الرمز 4 أرقام، تلكاه على شاشة اللعبة.');
+  $('joinErr').hidden=true; $('joinFind').disabled=true; $('joinFind').textContent='ندوّر...';
+  const api=await getRoomApi();
+  if (!api){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('جوالك ما يكدر يتصل من هنا. لازم تكون مسجل دخول ومدعو لهذي الصفحة، أو تلعبون بوضع «شاشة وحدة».'); }
+  try { if (room) await room.leave(); room=await api.join('quiz-'+code); } catch(e){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('ما كدرنا نتصل، جرّب مرة ثانية.'); }
+  me.code=code;
+  const t0=Date.now();
+  const wait=setInterval(()=>{
+    const b=findBoard();
+    if (b){ clearInterval(wait); $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; showJoinTeams(b.presence.s); }
+    else if (Date.now()-t0>9000){ clearInterval(wait); $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; joinErr('ما لكينا لعبة بهذا الرمز. تأكد من الرمز وإن شاشة اللعبة مفتوحة.'); }
+  },400);
+};
+function findBoard(){ const bs=peersNow().filter(p=>!p.sameTab && p.presence && p.presence.r==='b' && p.presence.s); bs.sort((a,b)=>a.peer<b.peer?-1:1); return boardPeer ? (bs.find(b=>b.peer===boardPeer)||bs[0]) : bs[0]; }
+function showJoinTeams(st){
+  $('joinStep1').hidden=true; $('joinStep2').hidden=false;
+  const saved=load('qa_me_v1',{}); $('nameIn').value=saved.name||'';
+  const el=$('joinTeams'); el.innerHTML='';
+  (st.teams||[]).forEach((t,i)=>{ const b=document.createElement('button'); b.className='chip'; b.style.borderColor=COLORS[i]; b.textContent=String(t).slice(0,18); b.setAttribute('aria-pressed',String(i===me.team)); b.onclick=()=>{ me.team=i; el.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); }; el.appendChild(b); });
+}
+$('joinGo').onclick = () => {
+  const n=$('nameIn').value.trim(); if (!n) return joinErr('اكتب اسمك حتى يعرفونك.');
+  me.name=n.slice(0,16); save('qa_me_v1',{name:me.name});
+  room.presence({ r:'p', n:me.name, t:me.team, a:null }).catch(()=>{});
+  room.onPeers(onPlayerPeers);
+  show('player'); renderPlayer();
+};
+function onPlayerPeers(){ const b=findBoard(); if (b){ boardPeer=b.peer; if (b.presence.s!==lastSt){ lastSt=b.presence.s; renderPlayer(); } } else renderPlayer(); }
+function myPeer(){ const m=peersNow().find(p=>p.sameTab); return m?m.peer:null; }
+let pTimer=null;
+function renderPlayer(){
+  const st=lastSt, c=$('pCard');
+  $('meLine').innerHTML=`<span class="dot" style="background:${COLORS[me.team]}"></span> ${esc(me.name)}`;
+  clearInterval(pTimer);
+  if (!st){ c.innerHTML='<div class="banner info">ننتظر شاشة اللعبة...</div>'; return; }
+  const teamLine=`<div class="board">${(st.teams||[]).map((t,i)=>`<div class="team" style="--tc:${COLORS[i]}"><div class="tn">${esc(String(t).slice(0,18))}</div><div class="ts">${Number(st.sc&&st.sc[i])||0}</div></div>`).join('')}</div>`;
+  if (st.ph==='q'){
+    if (!seenQ[st.id]) seenQ[st.id]=Date.now();
+    const answered = myAns && myAns.q===st.id;
+    c.innerHTML=`<div class="qtag">${esc(st.cat)} · ${esc(LV[st.lv]||'')} · سؤال ${Number(st.n)} من ${Number(st.of)}</div>
+      <div class="timer"><div class="tbar"><div class="tfill" id="pFill"></div></div><div class="tnum" id="pNum"></div></div>
+      <div class="qtext">${esc(st.q)}</div>
+      <div class="opts">${(st.o||[]).map((t,i)=>`<button class="opt ${answered&&myAns.i===i?'mine':''}" data-i="${i}" ${answered?'disabled':''}><span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi></button>`).join('')}</div>
+      ${answered?'<div class="banner info">تم إرسال جوابك ✓ ننتظر الباقين</div>':''}`;
+    c.querySelectorAll('button.opt').forEach(b=>b.onclick=()=>{ myAns={ q:st.id, i:Number(b.dataset.i), ms:Date.now()-seenQ[st.id] }; room.presence({ a:myAns }).catch(()=>{}); tone(520,.08); renderPlayer(); });
+    const tl=Number(st.tl)||30;
+    const draw=()=>{ const left=Math.max(0,tl-Math.floor((Date.now()-seenQ[st.id])/1000)); const n=$('pNum'), f=$('pFill'); if(!n) return; n.textContent=left; f.style.width=(left/tl*100)+'%'; f.classList.toggle('warn',left<=5); };
+    draw(); pTimer=setInterval(draw,500);
+  } else if (st.ph==='rev'){
+    const mine = myAns && myAns.q===st.id ? myAns.i : null; const pp=myPeer(); const g=(st.g&&pp&&st.g[pp])||0;
+    const ok = mine===st.a;
+    if (mine!==null) (ok?sndOk:sndBad)();
+    c.innerHTML=`<div class="qtext">${esc(st.q)}</div>
+      <div class="opts">${(st.o||[]).map((t,i)=>`<div class="opt ${i===st.a?'right':''} ${i===mine&&!ok?'wrong':''} ${i===mine?'mine':''}"><span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi></div>`).join('')}</div>
+      <div class="banner ${ok?'ok':'bad'}">${mine===null?'ما جاوبت على هذا السؤال':ok?`✔ صح! +${g} نقطة`:'✘ غلط'}</div>${teamLine}`;
+  } else if (st.ph==='round' || st.ph==='end'){
+    const top=(st.top||[]).map(([k,n,p],i)=>`<span class="pl ${k===myPeer()?'done':''}">${i===0?'⭐ ':''}${esc(String(n).slice(0,16))} · ${Number(p)||0}</span>`).join('');
+    c.innerHTML=`<h2 class="center">${st.ph==='end'?'النتيجة النهائية':'نهاية الجولة'}</h2>${teamLine}<div class="players">${top}</div>`;
+  } else {
+    const ps=playerPeers().concat(peersNow().filter(p=>p.sameTab));
+    c.innerHTML=`<div class="banner info">دخلت للعبة ✓ ننتظر الحكم يبدي الجولة</div>${teamLine}<div class="players">${ps.map(p=>`<span class="pl">${esc(String(p.presence.n||'').slice(0,16))}</span>`).join('')}</div>`;
+  }
+}
+
+goHome();
+</script>
+
+</body>
+</html>
