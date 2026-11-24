@@ -183,6 +183,7 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
     <div class="label" style="margin-top:14px">الإعدادات</div>
     <div class="setting"><span>وقت كل سؤال</span><div class="chips" id="timeChips"></div></div>
     <div class="setting"><span>عدد أسئلة الجولة</span><div class="chips" id="roundChips"></div></div>
+    <div class="setting" id="ansRow"><span>طريقة الإجابة<br><span class="muted small">القائد يشوف اقتراحات فريقه ويعتمد الجواب، وهو بس يستخدم وسائل المساعدة</span></span><div class="chips" id="ansChips"></div></div>
     <div class="setting" id="lifeRow"><span>وسائل المساعدة (احذف إجابتين، اتصال بصديق، رأي الجمهور)</span><button class="switch" role="switch" id="lifeSw" aria-label="وسائل المساعدة"></button></div>
     <div class="setting" id="hideRow"><span>أخفي الجواب عن الحكم حتى يضغط «أظهر»<br><span class="muted small">شغّله إذا جوال الحكم معروض على التلفزيون</span></span><button class="switch" role="switch" id="hideSw" aria-label="إخفاء الجواب"></button></div>
     <div class="row c" style="margin-top:14px"><button class="btn gold big" id="setupGo">التالي: اختيار القسم</button><button class="btn ghost" data-go="home">رجوع</button></div>
@@ -196,9 +197,15 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
     <div class="code" id="lobbyCode">----</div>
     <p class="muted">كل لاعب يفتح نفس الرابط من جواله، يضغط «انضم من جوالك» ويكتب الرمز</p>
     <div class="banner bad" id="lobbyErr" hidden></div>
-    <div class="rtStatus muted small" style="direction:rtl"></div>
+    <div class="rtStatus muted small"></div>
     <div class="label" id="lobbyCount">اللاعبين: 0</div>
     <div id="lobbyTeams" class="board"></div>
+    <p class="muted small" id="capHint" hidden>👑 القائد يعتمد جواب فريقه. اضغط على اسم أي لاعب حتى تخليه قائد فريقه.</p>
+    <div id="selfJoin" class="hostbox" style="margin-top:12px">
+      <b>تريد تلعب من هذا الجهاز هم؟</b>
+      <div class="row c"><input id="selfName" class="textin" style="max-width:220px" placeholder="اسمك" maxlength="16" aria-label="اسمك"><div class="chips" id="selfTeams"></div></div>
+      <div class="row c"><button class="btn gold sm" id="selfGo">أشارك باللعبة</button><button class="btn ghost sm" id="selfOff" hidden>ما أشارك</button></div>
+    </div>
     <div class="row c" style="margin-top:14px"><button class="btn gold big" id="lobbyGo">اختيار القسم</button><button class="btn ghost" id="lobbyBack">رجوع للإعدادات</button></div>
   </div>
 </section>
@@ -283,10 +290,10 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
 
 <script>
 // يحمّل مكتبة Supabase: يجرب نسخ أحدث أولاً، وإذا وحدة ما انحملت ينتقل للي بعدها
-(function(){var vs=['2.58.0','2.56.1','2.54.0','2.50.0','2.45.4'],i=0;function next(){if(window.supabase||i>=vs.length){document.dispatchEvent(new Event('sb-ready'));return;}var v=vs[i++],s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@'+v+'/dist/umd/supabase.js';s.onload=function(){if(window.supabase){window.__sbver=v;document.dispatchEvent(new Event('sb-ready'));}else next();};s.onerror=next;document.head.appendChild(s);}next();})();
+(function(){var vs=['2.58.0','2.56.1','2.54.0','2.50.0','2.45.4'],i=0;function next(){if(window.supabase||i>=vs.length)return;var v=vs[i++],s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@'+v+'/dist/umd/supabase.js';s.onload=function(){if(window.supabase){window.__sbver=v;}else next();};s.onerror=next;document.head.appendChild(s);}next();})();
 </script>
-<script src="realtime.js?v=3"></script>
-<script src="questions.js"></script>
+<script src="realtime.js?v=4"></script>
+<script src="questions.js?v=4"></script>
 <script>
 "use strict";
 const DATA = window.QDATA || {};
@@ -302,10 +309,11 @@ const load = (k,d) => { try { const v=localStorage.getItem(k); return v?JSON.par
 const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
 
 /* ---------------- persistent game state (board device) ---------------- */
-const DEF = () => ({ cfg:{ disp:'one', host:false, teams:['الفريق الأول','الفريق الثاني'], time:30, per:10, life:true, hide:false },
+const DEF = () => ({ cfg:{ disp:'one', host:false, ans:'solo', teams:['الفريق الأول','الفريق الثاني'], time:30, per:10, life:true, hide:false }, cap:{}, me:null,
   scores:[0,0], round:1, players:{}, history:[], ll:{}, played:{}, code:null, active:false });
 let S = load('qa_game_v1', null) || DEF();
 let seen = load('qa_seen_v1', {});
+S.cfg.ans=S.cfg.ans||'solo'; S.cap=S.cap||{}; if (S.me===undefined) S.me=null;
 const persist = () => save('qa_game_v1', S);
 
 /* ---------------- screens ---------------- */
@@ -347,7 +355,9 @@ function renderSetup(){
   c.teams.forEach((t,i) => { const d=document.createElement('label'); d.className='name'; d.innerHTML=`<span class="dot" style="background:${COLORS[i]}"></span><input id="tn${i}" maxlength="18" aria-label="اسم الفريق ${i+1}">`; d.querySelector('input').value=t; nw.appendChild(d); });
   chipRow($('timeChips'), [15,20,30,45,60], c.time, v=>v+' ث', v => { collectNames(); c.time=v; renderSetup(); });
   chipRow($('roundChips'), [5,10,15,20], c.per, v=>v, v => { collectNames(); c.per=v; renderSetup(); });
-  $('lifeRow').hidden = c.disp!=='one';
+  $('ansRow').hidden = c.disp!=='phones';
+  chipRow($('ansChips'), ['solo','captain'], c.ans, v => v==='solo'?'كل لاعب لحاله':'قائد لكل فريق', v => { collectNames(); c.ans=v; renderSetup(); });
+  $('lifeRow').hidden = !(c.disp==='one' || c.ans==='captain');
   $('hideRow').hidden = !c.host;
   $('lifeSw').setAttribute('aria-checked', String(c.life)); $('lifeSw').onclick = () => { collectNames(); c.life=!c.life; renderSetup(); };
   $('hideSw').setAttribute('aria-checked', String(c.hide)); $('hideSw').onclick = () => { collectNames(); c.hide=!c.hide; renderSetup(); };
@@ -427,7 +437,7 @@ function cur(){ return R.list[R.i]; }
 const isPhones = () => S.cfg.disp==='phones';
 
 function showQuestion(){
-  const q=cur(); R.phase='q'; R.done=false; R.gone=[]; R.helper=null; R.qStart=Date.now();
+  const q=cur(); R.phase='q'; R.done=false; R.gone=[]; R.helper=null; R.qStart=Date.now(); R.help={}; R.selfAns=null; R.teamGains=null;
   show('q');
   const c=DATA[q.cat];
   $('qTag').textContent=`${c.icon} ${c.name} · ${LV[q.lv]} · ${PTS[q.lv]} نقطة · سؤال ${R.i+1} من ${R.list.length}`;
@@ -437,7 +447,7 @@ function showQuestion(){
   // turn line (single screen only)
   const tl=$('turnLine');
   if (!isPhones()){ tl.hidden=false; tl.style.setProperty('--tc', COLORS[R.turn]); tl.innerHTML=`<span>دور: ${esc(S.cfg.teams[R.turn])}</span>`; } else tl.hidden=true;
-  renderOpts(oneNoHost);
+  if (isPhones()) renderBoardOpts(); else renderOpts(oneNoHost);
   renderBoard($('qBoard'), isPhones()?-1:R.turn);
   // lifelines (single screen)
   renderLife();
@@ -509,7 +519,8 @@ function nextQuestion(){
 /* lifelines: single screen only, once per team per game */
 function renderLife(off){
   const L=$('life'); L.innerHTML='';
-  if (isPhones() || !S.cfg.life) return;
+  if (isPhones()){ renderSelfHelp(); return; }
+  if (!S.cfg.life) return;
   const used=S.ll[R.turn]||{};
   [['fifty','✂️ احذف إجابتين'],['phone','📞 اتصال بصديق'],['aud','👥 رأي الجمهور']].forEach(([k,t])=>{
     const b=document.createElement('button'); b.className='lifebtn'; b.textContent=t; b.disabled=!!used[k]||off||R.phase!=='q';
@@ -566,7 +577,9 @@ let RES=null;
 
 /* =========================================================
    PHONES MODE — live room. The board publishes the game state in its
-   presence; each phone publishes its name, team and answer in its own.
+   presence; each phone publishes its name, team, answer and lifeline
+   requests in its own. In captain mode each team's captain confirms the
+   team answer; the others' taps are suggestions the captain sees.
    ========================================================= */
 let roomApi=null, room=null, roomTried=false;
 async function getRoomApi(){
@@ -576,12 +589,35 @@ async function getRoomApi(){
 }
 const peersNow = () => room ? room.peers() : [];
 const playerPeers = () => peersNow().filter(p => !p.sameTab && p.presence && p.presence.r==='p');
+const capMode = () => S.cfg.ans==='captain';
+const LIFE = { fifty:'✂️ احذف إجابتين', phone:'📞 اتصال بصديق', aud:'👥 رأي الجمهور' };
+const pname = p => String(p.presence.n||'لاعب').slice(0,16);
 
-/* board side */
+/* everyone playing, the board's own player (if any) included */
+const selfPlays = () => !!(S.me && !S.cfg.host);
+function allPlayers(){
+  const list=playerPeers().map(p=>({ peer:p.peer, presence:p.presence }));
+  if (selfPlays()) list.push({ peer:'self', self:true, presence:{ r:'p', n:S.me.n, t:S.me.t, a:R?R.selfAns:null } });
+  return list;
+}
+const joinSeen={};
+function captainOf(t){
+  if (!capMode()) return null;
+  const mem=allPlayers().filter(p=>Number(p.presence.t)===t);
+  if (!mem.length) return null;
+  if (S.cap[t] && mem.some(p=>p.peer===S.cap[t])) return S.cap[t];
+  mem.sort((a,b)=>(joinSeen[a.peer]||0)-(joinSeen[b.peer]||0));
+  return mem[0].peer;
+}
+const captains = () => { const c={}; S.cfg.teams.forEach((_,t)=>{ const k=captainOf(t); if (k) c[t]=k; }); return c; };
+
+/* ---------------- board: lobby ---------------- */
 async function openLobby(){
   if (!S.code){ S.code=String(1000+Math.floor(Math.random()*9000)); persist(); }
   $('lobbyCode').textContent=S.code; show('lobby');
   $('lobbyErr').hidden=true;
+  if (!joinSeen.self) joinSeen.self=Date.now();
+  renderSelfJoin(); renderLobby();
   const api=await getRoomApi();
   if (!api){ $('lobbyErr').textContent='ما كدرنا نتصل بخادم اللعبة. تأكد من الإنترنت وحدّث الصفحة، أو العب بوضع «شاشة وحدة».'; $('lobbyErr').hidden=false; return; }
   try {
@@ -591,63 +627,210 @@ async function openLobby(){
 }
 $('lobbyGo').onclick = () => openPick();
 $('lobbyBack').onclick = () => openSetup();
-function renderLobby(){
-  const ps=playerPeers(); $('lobbyCount').textContent=`اللاعبين: ${ps.length}`;
-  const el=$('lobbyTeams'); el.innerHTML='';
-  S.cfg.teams.forEach((t,i)=>{ const mem=ps.filter(p=>p.presence.t===i).map(p=>esc(String(p.presence.n||'لاعب').slice(0,16)));
-    const d=document.createElement('div'); d.className='team'; d.style.setProperty('--tc',COLORS[i]);
-    d.innerHTML=`<div class="tn"><span class="dot" style="background:${COLORS[i]}"></span> ${esc(t)}</div><div class="small">${mem.join('، ')||'<span class="muted">ماكو أحد بعد</span>'}</div>`; el.appendChild(d); });
+
+let selfTeam=0;
+function renderSelfJoin(){
+  $('selfJoin').hidden = S.cfg.host;
+  if (S.cfg.host) return;
+  const saved=load('qa_me_v1',{});
+  if (!$('selfName').value) $('selfName').value = S.me ? S.me.n : (saved.name||'');
+  if (S.me) selfTeam=S.me.t;
+  chipRow($('selfTeams'), S.cfg.teams.map((_,i)=>i), selfTeam, i=>S.cfg.teams[i], i=>{ selfTeam=i; if (S.me){ S.me.t=i; persist(); renderLobby(); pushState(); } renderSelfJoin(); });
+  $('selfTeams').querySelectorAll('.chip').forEach((b,i)=>b.style.borderColor=COLORS[i]);
+  $('selfGo').textContent = S.me ? 'تحديث اسمي' : 'أشارك باللعبة';
+  $('selfOff').hidden = !S.me;
 }
+$('selfGo').onclick = () => {
+  const n=$('selfName').value.trim(); if (!n){ toast('اكتب اسمك أول'); return; }
+  S.me={ n:n.slice(0,16), t:selfTeam }; save('qa_me_v1',{name:S.me.n}); persist();
+  renderSelfJoin(); renderLobby(); pushState(); toast('تمام، راح تلعب من هذا الجهاز');
+};
+$('selfOff').onclick = () => { S.me=null; if (S.cap) for (const t in S.cap) if (S.cap[t]==='self') delete S.cap[t]; persist(); renderSelfJoin(); renderLobby(); pushState(); };
+
+function renderLobby(){
+  const ps=allPlayers(); $('lobbyCount').textContent=`اللاعبين: ${ps.length}`;
+  $('capHint').hidden=!capMode();
+  const caps=captains(), el=$('lobbyTeams'); el.innerHTML='';
+  S.cfg.teams.forEach((t,i)=>{
+    const mem=ps.filter(p=>Number(p.presence.t)===i);
+    const d=document.createElement('div'); d.className='team'; d.style.setProperty('--tc',COLORS[i]);
+    d.innerHTML=`<div class="tn"><span class="dot" style="background:${COLORS[i]}"></span> ${esc(t)}</div>`;
+    const box=document.createElement('div'); box.className='players'; box.style.marginTop='6px';
+    if (!mem.length) box.innerHTML='<span class="muted small">ماكو أحد بعد</span>';
+    mem.forEach(p=>{
+      const b=document.createElement(capMode()?'button':'span'); b.className='pl'+(caps[i]===p.peer?' done':'');
+      b.textContent=(caps[i]===p.peer?'👑 ':'')+pname(p)+(p.self?' (هذا الجهاز)':'');
+      if (capMode()) b.onclick=()=>{ S.cap[i]=p.peer; persist(); renderLobby(); pushState(); };
+      box.appendChild(b);
+    });
+    d.appendChild(box); el.appendChild(d);
+  });
+}
+
+/* ---------------- board: live updates ---------------- */
 function onBoardPeers(){
+  const now=Date.now();
+  for (const p of playerPeers()) if (!joinSeen[p.peer]) joinSeen[p.peer]=now;
   if (!$('s-lobby').hidden) renderLobby();
   if (R && R.phase==='q' && isPhones()){
-    renderAnswerers();
-    const ps=playerPeers();
-    if (ps.length && ps.every(p=>p.presence.a && p.presence.a.q===cur().id)) phonesReveal();
+    // lifeline requests from captains
+    if (capMode() && S.cfg.life){
+      const caps=captains();
+      for (const p of playerPeers()){
+        const L=p.presence.life, t=Number(p.presence.t);
+        if (L && L.q===cur().id && caps[t]===p.peer && LIFE[L.k] && !((S.ll[t]||{})[L.k])) applyHelp(t, L.k);
+      }
+    }
+    renderAnswerers(); if (selfPlays()) markVotes();
+    checkAllAnswered();
   }
+  pushStateSoon();
 }
+let pushT=null;
+function pushStateSoon(){ clearTimeout(pushT); pushT=setTimeout(pushState,150); }
+
+function checkAllAnswered(){
+  if (!R || R.phase!=='q') return;
+  const q=cur(), ps=allPlayers(), has=p=>p.presence.a && p.presence.a.q===q.id;
+  if (!ps.length) return;
+  if (capMode()){
+    const caps=captains(), keys=Object.values(caps);
+    if (keys.length && keys.every(k=>{ const p=ps.find(x=>x.peer===k); return p && has(p); })) phonesReveal();
+  } else if (ps.every(has)) phonesReveal();
+}
+
+/* the board's own answer when its owner plays */
+function renderBoardOpts(){
+  if (!selfPlays()){ renderOpts(false); renderAnswerers(); return; }
+  const q=cur(), o=$('opts'); o.innerHTML='';
+  const gone=(R.help[S.me.t]||{}).g||[];
+  q.opts.forEach((t,i)=>{
+    const b=document.createElement('button'); b.className='opt'; b.id='op'+i;
+    b.innerHTML=`<span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi><small class="muted" id="vc${i}" style="margin-inline-start:auto"></small>`;
+    if (gone.includes(i)){ b.classList.add('gone'); b.disabled=true; }
+    b.onclick=()=>selfAnswer(i);
+    o.appendChild(b);
+  });
+  renderSelfHelp(); markVotes(); renderAnswerers();
+}
+function selfIsCaptain(){ return capMode() && captainOf(S.me.t)==='self'; }
+function selfAnswer(i){
+  if (!R || R.phase!=='q') return;
+  const q=cur();
+  const locked = R.selfAns && R.selfAns.q===q.id && (!capMode() || selfIsCaptain());
+  if (locked) return;
+  R.selfAns={ q:q.id, i, ms:Date.now()-R.qStart }; tone(520,.08);
+  markVotes(); renderAnswerers(); pushStateSoon(); checkAllAnswered();
+}
+function markVotes(){
+  if (!selfPlays() || !R) return;
+  const q=cur(), mine=R.selfAns&&R.selfAns.q===q.id?R.selfAns.i:null;
+  const lock = mine!==null && (!capMode() || selfIsCaptain());
+  const team=allPlayers().filter(p=>Number(p.presence.t)===S.me.t && !p.self);
+  q.opts.forEach((_,i)=>{
+    const b=$('op'+i); if (!b) return;
+    b.classList.toggle('mine', mine===i);
+    if (lock && R.phase==='q') b.disabled=true;
+    const vc=$('vc'+i);
+    if (vc){ const n=capMode()?team.filter(p=>p.presence.a&&p.presence.a.q===q.id&&p.presence.a.i===i).length:0; vc.textContent=n?`${n} اقتراح`:''; }
+  });
+  const capKey=captainOf(S.me.t);
+  let note='';
+  if (capMode()){
+    if (selfIsCaptain()) note = mine===null ? '👑 أنت القائد: شوف اقتراحات فريقك واعتمد الجواب' : '👑 اعتمدت جواب الفريق';
+    else { const cp=allPlayers().find(p=>p.peer===capKey); const ca=cp&&cp.presence.a&&cp.presence.a.q===q.id?cp.presence.a.i:null;
+      note = ca!==null ? `👑 القائد ${pname(cp)} اعتمد ${LET[ca]}` : (mine===null?'اقتراحك يوصل لقائد فريقك':'وصل اقتراحك للقائد، تكدر تغيّره'); }
+  } else if (mine!==null) note='تم تسجيل جوابك ✓';
+  const h=$('helper'); const helpTxt=(R.help[S.me.t]||{}).x||'';
+  h.hidden=!(note||helpTxt); h.innerHTML=[note?esc(note):'', helpTxt?esc(helpTxt):''].filter(Boolean).join('<br>');
+}
+function renderSelfHelp(){
+  const L=$('life'); L.innerHTML='';
+  if (!selfPlays() || !capMode() || !S.cfg.life || !selfIsCaptain()) return;
+  const used=S.ll[S.me.t]||{};
+  for (const k in LIFE){ const b=document.createElement('button'); b.className='lifebtn'; b.textContent=LIFE[k]; b.disabled=!!used[k]||R.phase!=='q'; b.onclick=()=>{ applyHelp(S.me.t,k); }; L.appendChild(b); }
+}
+
+/* lifelines in phones mode: computed by the board (it knows the answer), shown to that team only */
+function applyHelp(t,k){
+  const q=cur(); S.ll[t]=S.ll[t]||{}; if (S.ll[t][k]) return; S.ll[t][k]=true; persist();
+  const H=R.help[t]=R.help[t]||{ g:[], x:'' };
+  const wrong=[0,1,2,3].filter(i=>i!==q.a && !H.g.includes(i));
+  if (k==='fifty') H.g=H.g.concat(shuffle(wrong).slice(0,2));
+  if (k==='phone'){ const s=Math.random()<.75?q.a:shuffle(wrong)[0]; H.x=`📞 صديقكم يكول: «أظن ${LET[s]}) ${q.opts[s]}»`; }
+  if (k==='aud'){
+    const live=[0,1,2,3].filter(i=>!H.g.includes(i)), p={}; p[q.a]=45+Math.floor(Math.random()*26); let rem=100-p[q.a];
+    const others=live.filter(i=>i!==q.a); others.forEach((i,n)=>{ if(n===others.length-1) p[i]=rem; else { const s=Math.floor(Math.random()*(rem+1)/(others.length-n)); p[i]=s; rem-=s; } });
+    H.x=`👥 الجمهور: ${live.map(i=>`${LET[i]} ${p[i]}%`).join(' · ')}`;
+  }
+  toast(`${S.cfg.teams[t]} استخدموا ${LIFE[k]}`);
+  if (selfPlays() && S.me.t===t) renderBoardOpts();
+  pushState();
+}
+
 function renderAnswerers(){
   const el=$('answerers'); el.innerHTML='';
   if (!isPhones() || !R) return;
-  const q=cur(), ps=playerPeers();
-  el.innerHTML=ps.map(p=>{ const a=p.presence.a, has=a&&a.q===q.id; let cls=has?'done':'';
+  const q=cur(), ps=allPlayers(), caps=captains();
+  el.innerHTML=ps.map(p=>{ const a=p.presence.a, has=a&&a.q===q.id, isCap=Object.values(caps).includes(p.peer); let cls=has?'done':'';
     if (R.phase==='rev' && has) cls = a.i===q.a ? 'ok' : 'bad';
-    return `<span class="pl ${cls}">${has?(R.phase==='rev'?(a.i===q.a?'✔ ':'✘ '):'✓ '):''}${esc(String(p.presence.n||'لاعب').slice(0,16))}</span>`; }).join('') || '<span class="muted small">ماكو لاعبين متصلين</span>';
+    const mark = has ? (R.phase==='rev' ? (a.i===q.a?'✔ ':'✘ ') : '✓ ') : '';
+    return `<span class="pl ${cls}" style="border-inline-start:4px solid ${COLORS[Number(p.presence.t)||0]}">${mark}${isCap?'👑 ':''}${esc(pname(p))}</span>`; }).join('') || '<span class="muted small">ماكو لاعبين متصلين</span>';
 }
+
+/* ---------------- board: reveal & scoring ---------------- */
 let autoT;
 function phonesReveal(){
   if (R.phase!=='q') return; R.phase='rev'; stopTimer();
-  const q=cur(), limit=S.cfg.time*1000, best={}, gains={};
-  for (const p of playerPeers()){
-    const a=p.presence.a; if (!a || a.q!==q.id || a.i!==q.a) continue;
-    const g=Math.round(PTS[q.lv]*(0.5+0.5*Math.max(0,1-(Number(a.ms)||limit)/limit)));
-    const key=p.peer, team=Number(p.presence.t)||0;
-    S.players[key]=S.players[key]||{n:String(p.presence.n||'لاعب').slice(0,16),t:team,pts:0};
-    S.players[key].pts+=g; gains[key]=g;
-    best[team]=Math.max(best[team]||0,g);
+  const q=cur(), limit=S.cfg.time*1000, ps=allPlayers(), gains={}, tg={};
+  const speed = ms => Math.round(PTS[q.lv]*(0.5+0.5*Math.max(0,1-(Number(ms)||limit)/limit)));
+  const credit = (p,g) => { const key=p.self?'self':p.peer; S.players[key]=S.players[key]||{ n:pname(p), t:Number(p.presence.t)||0, pts:0 }; S.players[key].n=pname(p); S.players[key].pts+=g; gains[key]=g; };
+  if (capMode()){
+    const caps=captains();
+    S.cfg.teams.forEach((_,t)=>{
+      const mem=ps.filter(p=>Number(p.presence.t)===t), ans=mem.filter(p=>p.presence.a&&p.presence.a.q===q.id);
+      if (!ans.length) return;
+      let choice=null; const cp=ans.find(p=>p.peer===caps[t]);
+      if (cp) choice=cp.presence.a;
+      else { // captain silent: the team's most common suggestion, fastest first on a tie
+        const cnt={}; ans.forEach(p=>cnt[p.presence.a.i]=(cnt[p.presence.a.i]||0)+1);
+        const best=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+        choice=ans.filter(p=>String(p.presence.a.i)===best).sort((a,b)=>a.presence.a.ms-b.presence.a.ms)[0].presence.a;
+      }
+      tg[t] = choice.i===q.a ? speed(choice.ms) : 0;
+      S.scores[t]+=tg[t];
+      ans.forEach(p=>{ if (p.presence.a.i===q.a) credit(p, speed(p.presence.a.ms)); });
+    });
+  } else {
+    for (const p of ps){
+      const a=p.presence.a; if (!a || a.q!==q.id || a.i!==q.a) continue;
+      const g=speed(a.ms), t=Number(p.presence.t)||0; credit(p,g); tg[t]=Math.max(tg[t]||0,g);
+    }
+    for (const t in tg) S.scores[t]+=tg[t];
   }
-  for (const t in best) S.scores[t]+=best[t];
-  S.history.push({ team:-1, pts:0, players:gains, teams:best });
-  // keep undo correct for teams too
-  const last=S.history[S.history.length-1]; last.undoTeams=best;
-  persist(); R.lastGains=gains;
-  $('op'+q.a).classList.add('right'); renderAnswerers(); renderBoard($('qBoard'),-1);
-  const n=Object.keys(gains).length;
-  banner(n?'ok':'bad', `الجواب: ${LET[q.a]}) ${q.opts[q.a]} · ${n} جاوبوا صح`);
+  S.history.push({ team:-1, pts:0, players:gains, undoTeams:tg });
+  persist(); R.lastGains=gains; R.teamGains=tg;
+  $('opts').querySelectorAll('button').forEach(b=>b.disabled=true);
+  $('op'+q.a).classList.add('right');
+  if (selfPlays() && R.selfAns && R.selfAns.q===q.id && R.selfAns.i!==q.a) $('op'+R.selfAns.i).classList.add('wrong');
+  renderAnswerers(); renderBoard($('qBoard'),-1); $('life').innerHTML='';
+  const parts=S.cfg.teams.map((t,i)=> tg[i] ? `${t} ✔ +${tg[i]}` : `${t} ✘`).join(' · ');
+  banner(Object.values(tg).some(Boolean)?'ok':'bad', `الجواب: ${LET[q.a]}) ${q.opts[q.a]} — ${parts}`);
   sndOk();
-  if (S.cfg.host){ $('qNext').hidden=false; } else { $('qNext').hidden=false; autoT=setTimeout(()=>{ if (R && R.phase==='rev') nextQuestion(); }, 6000); }
+  $('qNext').hidden=false;
+  if (!S.cfg.host) autoT=setTimeout(()=>{ if (R && R.phase==='rev') nextQuestion(); }, 7000);
   pushState();
 }
-/* undo for phones rounds also removes team bonuses */
+/* undo for phones rounds also removes team points */
 const _undo=$('hUndo').onclick;
 $('hUndo').onclick=()=>{ const h=S.history[S.history.length-1]; if (h && h.undoTeams) for (const t in h.undoTeams) S.scores[t]=Math.max(0,S.scores[t]-h.undoTeams[t]); _undo(); };
 
 function boardState(){
-  const base={ teams:S.cfg.teams, sc:S.scores, code:S.code };
+  const base={ teams:S.cfg.teams, sc:S.scores, code:S.code, md:S.cfg.ans, cap:captains(), life:!!(capMode()&&S.cfg.life), ll:S.ll };
   if (R && !$('s-q').hidden){
     const q=cur();
-    const st={ ...base, ph:R.phase, id:q.id, q:q.q, o:q.opts, lv:q.lv, cat:DATA[q.cat].name, n:R.i+1, of:R.list.length, tl:S.cfg.time };
-    if (R.phase==='rev'){ st.a=q.a; st.g=R.lastGains||{}; }
+    const st={ ...base, ph:R.phase, id:q.id, q:q.q, o:q.opts, lv:q.lv, cat:DATA[q.cat].name, n:R.i+1, of:R.list.length, tl:S.cfg.time, help:R.help };
+    if (R.phase==='rev'){ st.a=q.a; st.g=R.lastGains||{}; st.tg=R.teamGains||{}; }
     return st;
   }
   if (!$('s-res').hidden) return { ...base, ph:RES&&RES.final?'end':'round', top:Object.entries(S.players).sort((a,b)=>b[1].pts-a[1].pts).slice(0,8).map(([k,v])=>[k,v.n,v.pts]) };
@@ -655,78 +838,108 @@ function boardState(){
 }
 function pushState(){
   if (!room || !isPhones()) return;
-  const st=boardState();
-  room.presence({ r:'b', s:st }).catch(()=>{});
+  room.presence({ r:'b', s:boardState() }).catch(()=>{});
 }
 
 /* ---------------- phone (player) side ---------------- */
 let me={ code:'', name:'', team:0 }, boardPeer=null, lastSt=null, myAns=null, seenQ={};
 function openJoin(){ $('joinErr').hidden=true; $('joinStep1').hidden=false; $('joinStep2').hidden=true; $('codeIn').value=''; show('join'); }
 function joinErr(t){ $('joinErr').textContent=t; $('joinErr').hidden=false; }
+function resetFind(){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; }
 $('joinFind').onclick = async () => {
   const code=$('codeIn').value.replace(/\D/g,'');
   if (code.length!==4) return joinErr('الرمز 4 أرقام، تلكاه على شاشة اللعبة.');
   $('joinErr').hidden=true; $('joinFind').disabled=true; $('joinFind').textContent='ندوّر...';
   const api=await getRoomApi();
-  if (!api){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('ما كدرنا نتصل بخادم اللعبة. تأكد من الإنترنت وحدّث الصفحة.'); }
-  try { if (room) await room.leave(); room=await api.join('quiz-'+code); } catch(e){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('ما كدرنا نتصل، جرّب مرة ثانية.'); }
+  if (!api){ resetFind(); return joinErr('ما كدرنا نتصل بخادم اللعبة. تأكد من الإنترنت وحدّث الصفحة.'); }
+  try { if (room) await room.leave(); room=await api.join('quiz-'+code); } catch(e){ resetFind(); return joinErr('ما كدرنا نتصل، جرّب مرة ثانية.'); }
   me.code=code;
   const t0=Date.now();
   const wait=setInterval(()=>{
     const b=findBoard();
-    if (b){ clearInterval(wait); $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; showJoinTeams(b.presence.s); }
-    else if (Date.now()-t0>9000){ clearInterval(wait); $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; joinErr('ما لكينا لعبة بهذا الرمز. تأكد من الرمز وإن شاشة اللعبة مفتوحة.'); }
+    if (b){ clearInterval(wait); resetFind(); showJoinTeams(b.presence.s); }
+    else if (Date.now()-t0>12000){ clearInterval(wait); resetFind(); joinErr('ما لكينا لعبة بهذا الرمز. تأكد من الرمز وإن شاشة اللعبة مفتوحة.'); }
   },400);
 };
 function findBoard(){ const bs=peersNow().filter(p=>!p.sameTab && p.presence && p.presence.r==='b' && p.presence.s); bs.sort((a,b)=>a.peer<b.peer?-1:1); return boardPeer ? (bs.find(b=>b.peer===boardPeer)||bs[0]) : bs[0]; }
 function showJoinTeams(st){
   $('joinStep1').hidden=true; $('joinStep2').hidden=false;
-  const saved=load('qa_me_v1',{}); $('nameIn').value=saved.name||'';
+  const saved=load('qa_me_v1',{}); if (!$('nameIn').value) $('nameIn').value=saved.name||'';
   const el=$('joinTeams'); el.innerHTML='';
   (st.teams||[]).forEach((t,i)=>{ const b=document.createElement('button'); b.className='chip'; b.style.borderColor=COLORS[i]; b.textContent=String(t).slice(0,18); b.setAttribute('aria-pressed',String(i===me.team)); b.onclick=()=>{ me.team=i; el.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); }; el.appendChild(b); });
 }
 $('joinGo').onclick = () => {
   const n=$('nameIn').value.trim(); if (!n) return joinErr('اكتب اسمك حتى يعرفونك.');
   me.name=n.slice(0,16); save('qa_me_v1',{name:me.name});
-  room.presence({ r:'p', n:me.name, t:me.team, a:null }).catch(()=>{});
+  room.presence({ r:'p', n:me.name, t:me.team, a:null, life:null }).catch(()=>{});
   room.onPeers(onPlayerPeers);
   show('player'); renderPlayer();
 };
-let lastStJson='';
-function onPlayerPeers(){ const b=findBoard(); if (b){ boardPeer=b.peer; const j=JSON.stringify(b.presence.s); if (j!==lastStJson){ lastStJson=j; lastSt=b.presence.s; renderPlayer(); } } else if (!lastSt) renderPlayer(); }
+let lastStJson='', lastTeamSig='';
 function myPeer(){ const m=peersNow().find(p=>p.sameTab); return m?m.peer:null; }
-let pTimer=null;
+function teamSig(){ // re-render when teammates' suggestions or the captain's choice change
+  if (!lastSt || lastSt.ph!=='q' || lastSt.md!=='captain') return '';
+  return playerPeers().filter(p=>Number(p.presence.t)===me.team).map(p=>p.peer+':'+(p.presence.a&&p.presence.a.q===lastSt.id?p.presence.a.i:'')).sort().join(',');
+}
+function onPlayerPeers(){
+  const b=findBoard();
+  if (b){ boardPeer=b.peer; const j=JSON.stringify(b.presence.s), sig=teamSig();
+    if (j!==lastStJson){ lastStJson=j; lastSt=b.presence.s; lastTeamSig=teamSig(); renderPlayer(); }
+    else if (sig!==lastTeamSig){ lastTeamSig=sig; renderPlayer(); } }
+  else if (!lastSt) renderPlayer();
+}
+let pTimer=null, lastSoundFor='';
 function renderPlayer(){
-  const st=lastSt, c=$('pCard');
-  $('meLine').innerHTML=`<span class="dot" style="background:${COLORS[me.team]}"></span> ${esc(me.name)}`;
+  const st=lastSt, c=$('pCard'), pp=myPeer();
+  const isCap = st && st.md==='captain' && st.cap && st.cap[me.team]===pp;
+  $('meLine').innerHTML=`<span class="dot" style="background:${COLORS[me.team]}"></span> ${esc(me.name)}${isCap?' · 👑 قائد الفريق':''}`;
   clearInterval(pTimer);
   if (!st){ c.innerHTML='<div class="banner info">ننتظر شاشة اللعبة...</div>'; return; }
   const teamLine=`<div class="board">${(st.teams||[]).map((t,i)=>`<div class="team" style="--tc:${COLORS[i]}"><div class="tn">${esc(String(t).slice(0,18))}</div><div class="ts">${Number(st.sc&&st.sc[i])||0}</div></div>`).join('')}</div>`;
   if (st.ph==='q'){
     if (!seenQ[st.id]) seenQ[st.id]=Date.now();
-    const answered = myAns && myAns.q===st.id;
+    const cap=st.md==='captain', mine = myAns && myAns.q===st.id ? myAns.i : null;
+    const lock = mine!==null && (!cap || isCap);
+    const help=(st.help&&st.help[me.team])||{}, gone=help.g||[];
+    const mates=playerPeers().filter(p=>Number(p.presence.t)===me.team);
+    const votes=i=>cap&&isCap?mates.filter(p=>p.presence.a&&p.presence.a.q===st.id&&p.presence.a.i===i).length:0;
+    let note='';
+    if (cap){
+      if (isCap) note = mine===null ? '👑 أنت القائد: شوف اقتراحات فريقك واعتمد الجواب' : '👑 اعتمدت جواب الفريق';
+      else { const cp=mates.find(p=>st.cap&&st.cap[me.team]===p.peer); const ca=cp&&cp.presence.a&&cp.presence.a.q===st.id?cp.presence.a.i:null;
+        note = ca!==null ? `👑 القائد ${pname(cp)} اعتمد ${LET[ca]}` : (mine===null?'اقتراحك يوصل لقائد فريقك':'وصل اقتراحك للقائد، تكدر تغيّره'); }
+    } else if (mine!==null) note='تم إرسال جوابك ✓ ننتظر الباقين';
+    const used=(st.ll&&st.ll[me.team])||{};
+    const lifeBtns = isCap && st.life ? `<div class="life">${Object.keys(LIFE).map(k=>`<button class="lifebtn" data-k="${k}" ${used[k]||lock?'disabled':''}>${LIFE[k]}</button>`).join('')}</div>` : '';
     c.innerHTML=`<div class="qtag">${esc(st.cat)} · ${esc(LV[st.lv]||'')} · سؤال ${Number(st.n)} من ${Number(st.of)}</div>
       <div class="timer"><div class="tbar"><div class="tfill" id="pFill"></div></div><div class="tnum" id="pNum"></div></div>
       <div class="qtext">${esc(st.q)}</div>
-      <div class="opts">${(st.o||[]).map((t,i)=>`<button class="opt ${answered&&myAns.i===i?'mine':''}" data-i="${i}" ${answered?'disabled':''}><span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi></button>`).join('')}</div>
-      ${answered?'<div class="banner info">تم إرسال جوابك ✓ ننتظر الباقين</div>':''}`;
+      ${help.x?`<div class="helper">${esc(help.x)}</div>`:''}
+      <div class="opts">${(st.o||[]).map((t,i)=>{ const v=votes(i), g=gone.includes(i); return `<button class="opt ${mine===i?'mine':''} ${g?'gone':''}" data-i="${i}" ${lock||g?'disabled':''}><span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi>${v?`<small class="muted" style="margin-inline-start:auto">${v} اقتراح</small>`:''}</button>`; }).join('')}</div>
+      ${note?`<div class="banner info">${esc(note)}</div>`:''}${lifeBtns}`;
     c.querySelectorAll('button.opt').forEach(b=>b.onclick=()=>{ myAns={ q:st.id, i:Number(b.dataset.i), ms:Date.now()-seenQ[st.id] }; room.presence({ a:myAns }).catch(()=>{}); tone(520,.08); renderPlayer(); });
+    c.querySelectorAll('button.lifebtn').forEach(b=>b.onclick=()=>{ room.presence({ life:{ q:st.id, k:b.dataset.k, at:Date.now() } }).catch(()=>{}); b.disabled=true; toast('طلبت '+LIFE[b.dataset.k]); });
     const tl=Number(st.tl)||30;
     const draw=()=>{ const left=Math.max(0,tl-Math.floor((Date.now()-seenQ[st.id])/1000)); const n=$('pNum'), f=$('pFill'); if(!n) return; n.textContent=left; f.style.width=(left/tl*100)+'%'; f.classList.toggle('warn',left<=5); };
     draw(); pTimer=setInterval(draw,500);
   } else if (st.ph==='rev'){
-    const mine = myAns && myAns.q===st.id ? myAns.i : null; const pp=myPeer(); const g=(st.g&&pp&&st.g[pp])||0;
-    const ok = mine===st.a;
-    if (mine!==null) (ok?sndOk:sndBad)();
+    const cap=st.md==='captain', mine = myAns && myAns.q===st.id ? myAns.i : null;
+    const g=(st.g&&pp&&st.g[pp])||0, tg=(st.tg&&st.tg[me.team])||0, ok = mine===st.a;
+    const good = cap ? tg>0 : ok;
+    if (lastSoundFor!==st.id){ lastSoundFor=st.id; (good?sndOk:sndBad)(); }
+    const msg = cap
+      ? (tg ? `✔ فريقك جاوب صح! +${tg} للفريق` : '✘ فريقك ما جاب الجواب') + (mine===null ? '' : ok ? ' · واقتراحك كان صح' : ' · واقتراحك كان غلط')
+      : (mine===null ? 'ما جاوبت على هذا السؤال' : ok ? `✔ صح! +${g} نقطة` : '✘ غلط');
     c.innerHTML=`<div class="qtext">${esc(st.q)}</div>
       <div class="opts">${(st.o||[]).map((t,i)=>`<div class="opt ${i===st.a?'right':''} ${i===mine&&!ok?'wrong':''} ${i===mine?'mine':''}"><span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi></div>`).join('')}</div>
-      <div class="banner ${ok?'ok':'bad'}">${mine===null?'ما جاوبت على هذا السؤال':ok?`✔ صح! +${g} نقطة`:'✘ غلط'}</div>${teamLine}`;
+      <div class="banner ${good?'ok':'bad'}">${esc(msg)}</div>${teamLine}`;
   } else if (st.ph==='round' || st.ph==='end'){
-    const top=(st.top||[]).map(([k,n,p],i)=>`<span class="pl ${k===myPeer()?'done':''}">${i===0?'⭐ ':''}${esc(String(n).slice(0,16))} · ${Number(p)||0}</span>`).join('');
+    const top=(st.top||[]).map(([k,n,p],i)=>`<span class="pl ${k===pp?'done':''}">${i===0?'⭐ ':''}${esc(String(n).slice(0,16))} · ${Number(p)||0}</span>`).join('');
     c.innerHTML=`<h2 class="center">${st.ph==='end'?'النتيجة النهائية':'نهاية الجولة'}</h2>${teamLine}<div class="players">${top}</div>`;
   } else {
     const ps=playerPeers().concat(peersNow().filter(p=>p.sameTab));
-    c.innerHTML=`<div class="banner info">دخلت للعبة ✓ ننتظر الحكم يبدي الجولة</div>${teamLine}<div class="players">${ps.map(p=>`<span class="pl">${esc(String(p.presence.n||'').slice(0,16))}</span>`).join('')}</div>`;
+    const capLine = st.md==='captain' ? (isCap ? '<div class="banner info">👑 أنت قائد فريقك: تعتمد الجواب وتستخدم وسائل المساعدة</div>' : '<div class="small muted center">هذي اللعبة بيها قائد لكل فريق، والقائد يعتمد الجواب</div>') : '';
+    c.innerHTML=`<div class="banner info">دخلت للعبة ✓ ننتظر بداية الجولة</div>${capLine}${teamLine}<div class="players">${ps.map(p=>`<span class="pl">${esc(String(p.presence.n||'').slice(0,16))}</span>`).join('')}</div>`;
   }
 }
 
