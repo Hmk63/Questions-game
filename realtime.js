@@ -7,7 +7,7 @@
   var SUPABASE_KEY = 'sb_publishable_Em8IhbBIjgPOqUuCuI7K0w_2ScV7bbj'; // مفتاح عام، مصمم للمتصفح
   var BEAT_MS = 6000, DROP_MS = 20000;
   var client = null;
-  var RT = window.__rt = { v: 'v4', status: 'ما بدأ', others: 0, err: '' };
+  var RT = window.__rt = { v: 'v5', status: 'ما بدأ', others: 0, err: '' };
   function show(){ var t='الاتصال: '+RT.status+' · أجهزة ثانية: '+RT.others+' · '+(window.supabase?'مكتبة '+(window.__sbver||'?'):'المكتبة ما انحملت')+' · '+RT.v+(RT.err?' · '+RT.err:''); var els=document.querySelectorAll('.rtStatus'); for(var i=0;i<els.length;i++) els[i].textContent=t; }
   setInterval(show, 1000);
   function getClient() {

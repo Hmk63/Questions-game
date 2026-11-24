@@ -174,6 +174,7 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
     <div class="label" style="margin-top:14px">الإعدادات</div>
     <div class="setting"><span>وقت كل سؤال</span><div class="chips" id="timeChips"></div></div>
     <div class="setting"><span>عدد أسئلة الجولة</span><div class="chips" id="roundChips"></div></div>
+    <div class="setting" id="modeRow"><span>نمط اللعب<br><span class="muted small">بالدور: كل فريق ياخذ سؤاله، وإذا غلط ينتقل للفريق الثاني بونص بنص النقاط</span></span><div class="chips" id="modeChips"></div></div>
     <div class="setting" id="ansRow"><span>طريقة الإجابة<br><span class="muted small">القائد يشوف اقتراحات فريقه ويعتمد الجواب، وهو بس يستخدم وسائل المساعدة</span></span><div class="chips" id="ansChips"></div></div>
     <div class="setting" id="lifeRow"><span>وسائل المساعدة (احذف إجابتين، اتصال بصديق، رأي الجمهور)</span><button class="switch" role="switch" id="lifeSw" aria-label="وسائل المساعدة"></button></div>
     <div class="setting" id="hideRow"><span>أخفي الجواب عن الحكم حتى يضغط «أظهر»<br><span class="muted small">شغّله إذا جوال الحكم معروض على التلفزيون</span></span><button class="switch" role="switch" id="hideSw" aria-label="إخفاء الجواب"></button></div>
@@ -293,11 +294,11 @@ const load = (k,d) => { try { const v=localStorage.getItem(k); return v?JSON.par
 const save = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} };
 
 /* ---------------- persistent game state (board device) ---------------- */
-const DEF = () => ({ cfg:{ disp:'one', host:false, ans:'solo', teams:['الفريق الأول','الفريق الثاني'], time:30, per:10, life:true, hide:false }, cap:{}, me:null,
+const DEF = () => ({ cfg:{ disp:'one', host:false, mode:'turns', ans:'solo', teams:['الفريق الأول','الفريق الثاني'], time:30, per:10, life:true, hide:false }, cap:{}, me:null,
   scores:[0,0], round:1, players:{}, history:[], ll:{}, played:{}, code:null, active:false });
 let S = load('qa_game_v1', null) || DEF();
 let seen = load('qa_seen_v1', {});
-S.cfg.ans=S.cfg.ans||'solo'; S.cap=S.cap||{}; if (S.me===undefined) S.me=null;
+S.cfg.ans=S.cfg.ans||'solo'; S.cfg.mode=S.cfg.mode||'turns'; S.cap=S.cap||{}; if (S.me===undefined) S.me=null;
 const persist = () => save('qa_game_v1', S);
 
 /* ---------------- screens ---------------- */
@@ -339,8 +340,10 @@ function renderSetup(){
   c.teams.forEach((t,i) => { const d=document.createElement('label'); d.className='name'; d.innerHTML=`<span class="dot" style="background:${COLORS[i]}"></span><input id="tn${i}" maxlength="18" aria-label="اسم الفريق ${i+1}">`; d.querySelector('input').value=t; nw.appendChild(d); });
   chipRow($('timeChips'), [15,20,30,45,60], c.time, v=>v+' ث', v => { collectNames(); c.time=v; renderSetup(); });
   chipRow($('roundChips'), [5,10,15,20], c.per, v=>v, v => { collectNames(); c.per=v; renderSetup(); });
+  $('modeRow').hidden = c.disp!=='phones';
+  chipRow($('modeChips'), ['turns','race'], c.mode, v => v==='turns'?'بالدور + بونص':'الأسرع ياخذ النقاط', v => { collectNames(); c.mode=v; renderSetup(); });
   $('ansRow').hidden = c.disp!=='phones';
-  chipRow($('ansChips'), ['solo','captain'], c.ans, v => v==='solo'?'كل لاعب لحاله':'قائد لكل فريق', v => { collectNames(); c.ans=v; renderSetup(); });
+  chipRow($('ansChips'), ['solo','captain'], c.ans, v => v==='solo'?(c.mode==='turns'?'أول واحد يجاوب من الفريق':'كل لاعب لحاله'):'قائد لكل فريق', v => { collectNames(); c.ans=v; renderSetup(); });
   $('lifeRow').hidden = !(c.disp==='one' || c.ans==='captain');
   $('hideRow').hidden = !c.host;
   $('lifeSw').setAttribute('aria-checked', String(c.life)); $('lifeSw').onclick = () => { collectNames(); c.life=!c.life; renderSetup(); };
@@ -421,18 +424,16 @@ function cur(){ return R.list[R.i]; }
 const isPhones = () => S.cfg.disp==='phones';
 
 function showQuestion(){
-  const q=cur(); R.phase='q'; R.done=false; R.gone=[]; R.helper=null; R.qStart=Date.now(); R.help={}; R.selfAns=null; R.teamGains=null;
+  const q=cur(); R.phase='q'; R.done=false; R.gone=[]; R.helper=null; R.qStart=Date.now(); R.help={}; R.selfAns=null; R.teamGains=null; R.stage='main'; R.turnTeam=R.turn; R.aid=q.id;
   show('q');
   const c=DATA[q.cat];
   $('qTag').textContent=`${c.icon} ${c.name} · ${LV[q.lv]} · ${PTS[q.lv]} نقطة · سؤال ${R.i+1} من ${R.list.length}`;
   $('qText').textContent=q.q;
   $('qBanner').hidden=true; $('qNext').hidden=true; $('helper').hidden=true;
   const oneNoHost = !isPhones() && !S.cfg.host;
-  // turn line (single screen only)
-  const tl=$('turnLine');
-  if (!isPhones()){ tl.hidden=false; tl.style.setProperty('--tc', COLORS[R.turn]); tl.innerHTML=`<span>دور: ${esc(S.cfg.teams[R.turn])}</span>`; } else tl.hidden=true;
+  renderTurnLine();
   if (isPhones()) renderBoardOpts(); else renderOpts(oneNoHost);
-  renderBoard($('qBoard'), isPhones()?-1:R.turn);
+  renderBoard($('qBoard'), turnIdx());
   // lifelines (single screen)
   renderLife();
   // host box
@@ -448,12 +449,33 @@ function showQuestion(){
   startTimer(S.cfg.time);
   pushState();
 }
+const turnsMode = () => S.cfg.mode==='turns';
+const aid = () => R.aid || cur().id;
+const turnIdx = () => (!isPhones() || turnsMode()) ? R.turnTeam : -1;
+function renderTurnLine(){
+  const tl=$('turnLine');
+  if (isPhones() && !turnsMode()){ tl.hidden=true; return; }
+  tl.hidden=false; tl.style.setProperty('--tc', COLORS[R.turnTeam]);
+  tl.innerHTML=`<span>${R.stage==='bonus'?'🎁 بونص بنص النقاط: ':'دور: '}${esc(S.cfg.teams[R.turnTeam])}</span>`;
+}
+/* a wrong (or timed-out) turn passes the question to the next team as a bonus: half points, no lifelines */
+function goBonus(wrongIdx){
+  const q=cur(); sndBad();
+  R.stage='bonus'; if (wrongIdx!=null && !R.gone.includes(wrongIdx)) R.gone.push(wrongIdx);
+  R.turnTeam=(R.turnTeam+1)%S.cfg.teams.length; R.aid=q.id+'b'; R.qStart=Date.now(); R.selfAns=null;
+  toast(`${wrongIdx==null?'⏰ خلص الوقت':'✘ غلط'}، السؤال ينتقل لـ ${S.cfg.teams[R.turnTeam]} بونص`);
+  renderTurnLine();
+  if (isPhones()) renderBoardOpts(); else renderOpts(!S.cfg.host);
+  if (wrongIdx!=null){ const e=$('op'+wrongIdx); if (e) e.classList.add('wrong'); }
+  renderBoard($('qBoard'), turnIdx()); renderLife(); renderAnswerers();
+  startTimer(S.cfg.time); pushState();
+}
 function renderOpts(clickable){
   const q=cur(), o=$('opts'); o.innerHTML='';
   q.opts.forEach((t,i)=>{
     const b=document.createElement(clickable?'button':'div'); b.className='opt'; b.id='op'+i;
     b.innerHTML=`<span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi>`;
-    if (R.gone.includes(i)) b.classList.add('gone');
+    if (R.gone.includes(i)){ b.classList.add('gone'); if (clickable) b.disabled=true; }
     if (clickable) b.onclick=()=>singleAnswer(i);
     o.appendChild(b);
   });
@@ -463,14 +485,16 @@ function lockOpts(){ $('opts').querySelectorAll('button').forEach(b=>b.disabled=
 
 /* single screen, no host: the team on turn taps an answer */
 function singleAnswer(i){
-  if (R.phase!=='q') return; R.phase='rev'; stopTimer(); lockOpts();
-  const q=cur(), ok=i===q.a; const t=R.turn;
+  if (R.phase!=='q') return;
+  const q=cur(), ok=i===q.a, t=R.turnTeam, bonus=R.stage==='bonus';
+  if (!ok && !bonus && S.cfg.teams.length>1){ goBonus(i); return; }
+  R.phase='rev'; stopTimer(); lockOpts();
   $('op'+q.a).classList.add('right'); if (!ok) $('op'+i).classList.add('wrong');
   let gain=0;
-  if (ok){ gain=Math.round(PTS[q.lv]*(0.5+0.5*tLeft/S.cfg.time)); S.scores[t]+=gain; sndOk(); } else sndBad();
+  if (ok){ gain=bonus?Math.round(PTS[q.lv]/2):PTS[q.lv]; S.scores[t]+=gain; sndOk(); } else sndBad();
   S.history.push({ team:t, pts:gain }); persist();
-  banner(ok?'ok':'bad', ok?`✔ صح! ${S.cfg.teams[t]} +${gain} نقطة`:`✘ غلط. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`);
-  renderBoard($('qBoard'), R.turn); $('qNext').hidden=false; renderLife(true);
+  banner(ok?'ok':'bad', ok?`✔ صح! ${S.cfg.teams[t]} +${gain} نقطة${bonus?' (بونص)':''}`:`✘ غلط. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`);
+  renderBoard($('qBoard'), t); $('qNext').hidden=false; renderLife(true);
 }
 function banner(kind, text){ const b=$('qBanner'); b.className='banner '+kind; b.textContent=text; b.hidden=false; }
 
@@ -488,13 +512,13 @@ $('hUndo').onclick = () => {
   persist(); renderBoard($('qBoard'), isPhones()?-1:R.turn); $('hUndo').disabled=!S.history.length; toast('تم التراجع عن آخر نقاط'); pushState();
 };
 $('showAns').onclick = () => { $('hostAns').hidden=false; $('showAns').hidden=true; $('op'+cur().a).classList.add('right'); };
-$('hReveal').onclick = () => { if (R.phase==='q') phonesReveal(); };
+$('hReveal').onclick = () => { if (R.phase==='q'){ if (turnsMode()) checkTurnAnswer(true); else phonesReveal(); } };
 $('qNext').onclick = () => nextQuestion();
 $('qExit').onclick = () => { stopTimer(); clearTimeout(autoT); R=null; openPick(); };
 
 function nextQuestion(){
   clearTimeout(autoT);
-  if (!isPhones()) R.turn=(R.turn+1)%S.cfg.teams.length;
+  if (!isPhones() || turnsMode()) R.turn=(R.turn+1)%S.cfg.teams.length;
   R.i++;
   if (R.i>=R.list.length){ S.round++; persist(); showResults(false); return; }
   showQuestion();
@@ -505,14 +529,14 @@ function renderLife(off){
   const L=$('life'); L.innerHTML='';
   if (isPhones()){ renderSelfHelp(); return; }
   if (!S.cfg.life) return;
-  const used=S.ll[R.turn]||{};
+  const used=S.ll[R.turnTeam]||{};
   [['fifty','✂️ احذف إجابتين'],['phone','📞 اتصال بصديق'],['aud','👥 رأي الجمهور']].forEach(([k,t])=>{
-    const b=document.createElement('button'); b.className='lifebtn'; b.textContent=t; b.disabled=!!used[k]||off||R.phase!=='q';
+    const b=document.createElement('button'); b.className='lifebtn'; b.textContent=t; b.disabled=!!used[k]||off||R.phase!=='q'||R.stage==='bonus';
     b.onclick=()=>useLife(k); L.appendChild(b);
   });
 }
 function useLife(k){
-  const q=cur(); S.ll[R.turn]=S.ll[R.turn]||{}; S.ll[R.turn][k]=true; persist();
+  const q=cur(); S.ll[R.turnTeam]=S.ll[R.turnTeam]||{}; S.ll[R.turnTeam][k]=true; persist();
   const wrong=[0,1,2,3].filter(i=>i!==q.a && !R.gone.includes(i));
   const h=$('helper');
   if (k==='fifty'){ R.gone=shuffle(wrong).slice(0,2); R.gone.forEach(i=>{ const e=$('op'+i); e.classList.add('gone'); e.disabled=true; }); }
@@ -535,8 +559,9 @@ $('tPlay').onclick = () => { if (tRun) stopTimer(); else if (tLeft>0 && R && R.p
 function timeUp(){
   if (!R || R.phase!=='q') return;
   tone(300,.6);
-  if (isPhones()) { phonesReveal(); return; }
-  if (!S.cfg.host){ R.phase='rev'; lockOpts(); const q=cur(); $('op'+q.a).classList.add('right'); S.history.push({team:R.turn,pts:0}); persist(); banner('bad',`⏰ خلص الوقت. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`); $('qNext').hidden=false; renderLife(true); }
+  if (isPhones()) { if (turnsMode()) checkTurnAnswer(true); else phonesReveal(); return; }
+  if (!S.cfg.host && R.stage==='main' && S.cfg.teams.length>1){ goBonus(null); return; }
+  if (!S.cfg.host){ R.phase='rev'; lockOpts(); const q=cur(); $('op'+q.a).classList.add('right'); S.history.push({team:R.turnTeam,pts:0}); persist(); banner('bad',`⏰ خلص الوقت. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`); $('qNext').hidden=false; renderLife(true); }
   else toast('⏰ خلص الوقت');
 }
 
@@ -662,7 +687,7 @@ function onBoardPeers(){
       const caps=captains();
       for (const p of playerPeers()){
         const L=p.presence.life, t=Number(p.presence.t);
-        if (L && L.q===cur().id && caps[t]===p.peer && LIFE[L.k] && !((S.ll[t]||{})[L.k])) applyHelp(t, L.k);
+        if (L && L.q===aid() && caps[t]===p.peer && LIFE[L.k] && !((S.ll[t]||{})[L.k]) && (!turnsMode() || (t===R.turnTeam && R.stage==='main'))) applyHelp(t, L.k);
       }
     }
     renderAnswerers(); if (selfPlays()) markVotes();
@@ -675,7 +700,8 @@ function pushStateSoon(){ clearTimeout(pushT); pushT=setTimeout(pushState,150); 
 
 function checkAllAnswered(){
   if (!R || R.phase!=='q') return;
-  const q=cur(), ps=allPlayers(), has=p=>p.presence.a && p.presence.a.q===q.id;
+  if (turnsMode()){ checkTurnAnswer(false); return; }
+  const q=cur(), ps=allPlayers(), has=p=>p.presence.a && p.presence.a.q===aid();
   if (!ps.length) return;
   if (capMode()){
     const caps=captains(), keys=Object.values(caps);
@@ -687,9 +713,10 @@ function checkAllAnswered(){
 function renderBoardOpts(){
   if (!selfPlays()){ renderOpts(false); renderAnswerers(); return; }
   const q=cur(), o=$('opts'); o.innerHTML='';
-  const gone=(R.help[S.me.t]||{}).g||[];
+  const gone=((R.help[S.me.t]||{}).g||[]).concat(R.gone);
+  const myTurn = !turnsMode() || S.me.t===R.turnTeam;
   q.opts.forEach((t,i)=>{
-    const b=document.createElement('button'); b.className='opt'; b.id='op'+i;
+    const b=document.createElement('button'); b.className='opt'; b.id='op'+i; if (!myTurn) b.disabled=true;
     b.innerHTML=`<span class="lt">${LET[i]}</span><bdi>${esc(t)}</bdi><small class="muted" id="vc${i}" style="margin-inline-start:auto"></small>`;
     if (gone.includes(i)){ b.classList.add('gone'); b.disabled=true; }
     b.onclick=()=>selfAnswer(i);
@@ -700,15 +727,16 @@ function renderBoardOpts(){
 function selfIsCaptain(){ return capMode() && captainOf(S.me.t)==='self'; }
 function selfAnswer(i){
   if (!R || R.phase!=='q') return;
+  if (turnsMode() && S.me.t!==R.turnTeam) return;
   const q=cur();
-  const locked = R.selfAns && R.selfAns.q===q.id && (!capMode() || selfIsCaptain());
+  const locked = R.selfAns && R.selfAns.q===aid() && (!capMode() || selfIsCaptain());
   if (locked) return;
-  R.selfAns={ q:q.id, i, ms:Date.now()-R.qStart }; tone(520,.08);
+  R.selfAns={ q:aid(), i, ms:Date.now()-R.qStart }; tone(520,.08);
   markVotes(); renderAnswerers(); pushStateSoon(); checkAllAnswered();
 }
 function markVotes(){
   if (!selfPlays() || !R) return;
-  const q=cur(), mine=R.selfAns&&R.selfAns.q===q.id?R.selfAns.i:null;
+  const q=cur(), mine=R.selfAns&&R.selfAns.q===aid()?R.selfAns.i:null;
   const lock = mine!==null && (!capMode() || selfIsCaptain());
   const team=allPlayers().filter(p=>Number(p.presence.t)===S.me.t && !p.self);
   q.opts.forEach((_,i)=>{
@@ -716,21 +744,24 @@ function markVotes(){
     b.classList.toggle('mine', mine===i);
     if (lock && R.phase==='q') b.disabled=true;
     const vc=$('vc'+i);
-    if (vc){ const n=capMode()?team.filter(p=>p.presence.a&&p.presence.a.q===q.id&&p.presence.a.i===i).length:0; vc.textContent=n?`${n} اقتراح`:''; }
+    if (vc){ const n=capMode()?team.filter(p=>p.presence.a&&p.presence.a.q===aid()&&p.presence.a.i===i).length:0; vc.textContent=n?`${n} اقتراح`:''; }
   });
   const capKey=captainOf(S.me.t);
   let note='';
   if (capMode()){
     if (selfIsCaptain()) note = mine===null ? '👑 أنت القائد: شوف اقتراحات فريقك واعتمد الجواب' : '👑 اعتمدت جواب الفريق';
-    else { const cp=allPlayers().find(p=>p.peer===capKey); const ca=cp&&cp.presence.a&&cp.presence.a.q===q.id?cp.presence.a.i:null;
+    else { const cp=allPlayers().find(p=>p.peer===capKey); const ca=cp&&cp.presence.a&&cp.presence.a.q===aid()?cp.presence.a.i:null;
       note = ca!==null ? `👑 القائد ${pname(cp)} اعتمد ${LET[ca]}` : (mine===null?'اقتراحك يوصل لقائد فريقك':'وصل اقتراحك للقائد، تكدر تغيّره'); }
   } else if (mine!==null) note='تم تسجيل جوابك ✓';
+  if (turnsMode() && S.me.t!==R.turnTeam) note = (R.turnTeam+1)%S.cfg.teams.length===S.me.t && R.stage==='main' ? `🎯 هذا سؤال ${S.cfg.teams[R.turnTeam]}، وإذا غلطوا ينتقل لفريقك` : `🎯 هذا سؤال ${S.cfg.teams[R.turnTeam]}`;
+  else if (turnsMode() && R.stage==='bonus' && mine===null) note='🎁 سؤال بونص لفريقك: نص النقاط وبدون وسائل مساعدة';
   const h=$('helper'); const helpTxt=(R.help[S.me.t]||{}).x||'';
   h.hidden=!(note||helpTxt); h.innerHTML=[note?esc(note):'', helpTxt?esc(helpTxt):''].filter(Boolean).join('<br>');
 }
 function renderSelfHelp(){
   const L=$('life'); L.innerHTML='';
   if (!selfPlays() || !capMode() || !S.cfg.life || !selfIsCaptain()) return;
+  if (turnsMode() && (S.me.t!==R.turnTeam || R.stage!=='main')) return;
   const used=S.ll[S.me.t]||{};
   for (const k in LIFE){ const b=document.createElement('button'); b.className='lifebtn'; b.textContent=LIFE[k]; b.disabled=!!used[k]||R.phase!=='q'; b.onclick=()=>{ applyHelp(S.me.t,k); }; L.appendChild(b); }
 }
@@ -756,10 +787,56 @@ function renderAnswerers(){
   const el=$('answerers'); el.innerHTML='';
   if (!isPhones() || !R) return;
   const q=cur(), ps=allPlayers(), caps=captains();
-  el.innerHTML=ps.map(p=>{ const a=p.presence.a, has=a&&a.q===q.id, isCap=Object.values(caps).includes(p.peer); let cls=has?'done':'';
+  el.innerHTML=ps.map(p=>{ const a=p.presence.a, has=a&&a.q===aid(), isCap=Object.values(caps).includes(p.peer); let cls=has?'done':'';
     if (R.phase==='rev' && has) cls = a.i===q.a ? 'ok' : 'bad';
     const mark = has ? (R.phase==='rev' ? (a.i===q.a?'✔ ':'✘ ') : '✓ ') : '';
     return `<span class="pl ${cls}" style="border-inline-start:4px solid ${COLORS[Number(p.presence.t)||0]}">${mark}${isCap?'👑 ':''}${esc(pname(p))}</span>`; }).join('') || '<span class="muted small">ماكو لاعبين متصلين</span>';
+}
+
+/* ---------------- board: turn mode ---------------- */
+/* the team on turn answers: its captain (captain mode) or its first player to tap; at the timeout a
+   silent captain is replaced by the team's most common suggestion */
+function teamChoice(t, final){
+  const ans=allPlayers().filter(p=>Number(p.presence.t)===t && p.presence.a && p.presence.a.q===aid());
+  if (!ans.length) return null;
+  if (capMode()){
+    const cp=ans.find(p=>p.peer===captainOf(t)); if (cp) return { a:cp.presence.a, p:cp };
+    if (!final) return null;
+    const cnt={}; ans.forEach(p=>cnt[p.presence.a.i]=(cnt[p.presence.a.i]||0)+1);
+    const best=Object.keys(cnt).sort((a,b)=>cnt[b]-cnt[a])[0];
+    const pick=ans.filter(p=>String(p.presence.a.i)===best).sort((a,b)=>a.presence.a.ms-b.presence.a.ms)[0];
+    return { a:pick.presence.a, p:pick };
+  }
+  const first=ans.slice().sort((a,b)=>a.presence.a.ms-b.presence.a.ms)[0];
+  return { a:first.presence.a, p:first };
+}
+function checkTurnAnswer(final){
+  if (!R || R.phase!=='q') return;
+  const c=teamChoice(R.turnTeam, final);
+  if (c || final) resolveTurn(c);
+}
+function resolveTurn(c){
+  const q=cur(), t=R.turnTeam, bonus=R.stage==='bonus';
+  if (c && c.a.i===q.a){ finishTurn(t, bonus?Math.round(PTS[q.lv]/2):PTS[q.lv], c); return; }
+  if (!bonus && S.cfg.teams.length>1){ goBonus(c?c.a.i:null); return; }
+  finishTurn(t, 0, c);
+}
+function finishTurn(t, g, c){
+  if (R.phase!=='q') return; R.phase='rev'; stopTimer();
+  const q=cur(), tg={}, gains={};
+  if (g){ tg[t]=g; S.scores[t]+=g;
+    const key=c.p.self?'self':c.p.peer; S.players[key]=S.players[key]||{ n:pname(c.p), t, pts:0 }; S.players[key].n=pname(c.p); S.players[key].pts+=g; gains[key]=g; }
+  S.history.push({ team:-1, pts:0, players:gains, undoTeams:tg });
+  persist(); R.lastGains=gains; R.teamGains=tg;
+  $('opts').querySelectorAll('button').forEach(b=>b.disabled=true);
+  $('op'+q.a).classList.add('right');
+  if (c && c.a.i!==q.a){ const e=$('op'+c.a.i); if (e) e.classList.add('wrong'); }
+  renderAnswerers(); renderBoard($('qBoard'), t); $('life').innerHTML='';
+  banner(g?'ok':'bad', g ? `✔ ${S.cfg.teams[t]} جاوبوا صح +${g}${R.stage==='bonus'?' (بونص)':''}` : `✘ محد جاب الجواب. الجواب: ${LET[q.a]}) ${q.opts[q.a]}`);
+  (g?sndOk:sndBad)();
+  $('qNext').hidden=false;
+  if (!S.cfg.host) autoT=setTimeout(()=>{ if (R && R.phase==='rev') nextQuestion(); }, 6000);
+  pushState();
 }
 
 /* ---------------- board: reveal & scoring ---------------- */
@@ -772,7 +849,7 @@ function phonesReveal(){
   if (capMode()){
     const caps=captains();
     S.cfg.teams.forEach((_,t)=>{
-      const mem=ps.filter(p=>Number(p.presence.t)===t), ans=mem.filter(p=>p.presence.a&&p.presence.a.q===q.id);
+      const mem=ps.filter(p=>Number(p.presence.t)===t), ans=mem.filter(p=>p.presence.a&&p.presence.a.q===aid());
       if (!ans.length) return;
       let choice=null; const cp=ans.find(p=>p.peer===caps[t]);
       if (cp) choice=cp.presence.a;
@@ -787,7 +864,7 @@ function phonesReveal(){
     });
   } else {
     for (const p of ps){
-      const a=p.presence.a; if (!a || a.q!==q.id || a.i!==q.a) continue;
+      const a=p.presence.a; if (!a || a.q!==aid() || a.i!==q.a) continue;
       const g=speed(a.ms), t=Number(p.presence.t)||0; credit(p,g); tg[t]=Math.max(tg[t]||0,g);
     }
     for (const t in tg) S.scores[t]+=tg[t];
@@ -796,7 +873,7 @@ function phonesReveal(){
   persist(); R.lastGains=gains; R.teamGains=tg;
   $('opts').querySelectorAll('button').forEach(b=>b.disabled=true);
   $('op'+q.a).classList.add('right');
-  if (selfPlays() && R.selfAns && R.selfAns.q===q.id && R.selfAns.i!==q.a) $('op'+R.selfAns.i).classList.add('wrong');
+  if (selfPlays() && R.selfAns && R.selfAns.q===aid() && R.selfAns.i!==q.a) $('op'+R.selfAns.i).classList.add('wrong');
   renderAnswerers(); renderBoard($('qBoard'),-1); $('life').innerHTML='';
   const parts=S.cfg.teams.map((t,i)=> tg[i] ? `${t} ✔ +${tg[i]}` : `${t} ✘`).join(' · ');
   banner(Object.values(tg).some(Boolean)?'ok':'bad', `الجواب: ${LET[q.a]}) ${q.opts[q.a]} — ${parts}`);
@@ -810,10 +887,10 @@ const _undo=$('hUndo').onclick;
 $('hUndo').onclick=()=>{ const h=S.history[S.history.length-1]; if (h && h.undoTeams) for (const t in h.undoTeams) S.scores[t]=Math.max(0,S.scores[t]-h.undoTeams[t]); _undo(); };
 
 function boardState(){
-  const base={ teams:S.cfg.teams, sc:S.scores, code:S.code, md:S.cfg.ans, cap:captains(), life:!!(capMode()&&S.cfg.life), ll:S.ll };
+  const base={ teams:S.cfg.teams, sc:S.scores, code:S.code, md:S.cfg.ans, mo:S.cfg.mode, cap:captains(), life:!!(capMode()&&S.cfg.life), ll:S.ll };
   if (R && !$('s-q').hidden){
     const q=cur();
-    const st={ ...base, ph:R.phase, id:q.id, q:q.q, o:q.opts, lv:q.lv, cat:DATA[q.cat].name, n:R.i+1, of:R.list.length, tl:S.cfg.time, help:R.help };
+    const st={ ...base, ph:R.phase, id:aid(), q:q.q, o:q.opts, lv:q.lv, cat:DATA[q.cat].name, n:R.i+1, of:R.list.length, tl:S.cfg.time, help:R.help, mo:S.cfg.mode, tt:R.turnTeam, stg:R.stage, gone:R.gone };
     if (R.phase==='rev'){ st.a=q.a; st.g=R.lastGains||{}; st.tg=R.teamGains||{}; }
     return st;
   }
@@ -883,8 +960,9 @@ function renderPlayer(){
   if (st.ph==='q'){
     if (!seenQ[st.id]) seenQ[st.id]=Date.now();
     const cap=st.md==='captain', mine = myAns && myAns.q===st.id ? myAns.i : null;
-    const lock = mine!==null && (!cap || isCap);
-    const help=(st.help&&st.help[me.team])||{}, gone=help.g||[];
+    const lock = (mine!==null && (!cap || isCap)) || (st.mo==='turns' && st.tt!==me.team);
+    const help=(st.help&&st.help[me.team])||{}, gone=(help.g||[]).concat(st.gone||[]);
+    const turns=st.mo==='turns', myTurn=!turns || st.tt===me.team, nTeams=(st.teams||[]).length;
     const mates=playerPeers().filter(p=>Number(p.presence.t)===me.team);
     const votes=i=>cap&&isCap?mates.filter(p=>p.presence.a&&p.presence.a.q===st.id&&p.presence.a.i===i).length:0;
     let note='';
@@ -893,8 +971,11 @@ function renderPlayer(){
       else { const cp=mates.find(p=>st.cap&&st.cap[me.team]===p.peer); const ca=cp&&cp.presence.a&&cp.presence.a.q===st.id?cp.presence.a.i:null;
         note = ca!==null ? `👑 القائد ${pname(cp)} اعتمد ${LET[ca]}` : (mine===null?'اقتراحك يوصل لقائد فريقك':'وصل اقتراحك للقائد، تكدر تغيّره'); }
     } else if (mine!==null) note='تم إرسال جوابك ✓ ننتظر الباقين';
+    if (!myTurn) note = (st.tt+1)%nTeams===me.team && st.stg==='main' ? `🎯 هذا سؤال ${st.teams[st.tt]}، وإذا غلطوا ينتقل لفريقك` : `🎯 هذا سؤال ${st.teams[st.tt]}، انتظر دور فريقك`;
+    else if (turns && st.stg==='bonus' && mine===null) note='🎁 سؤال بونص لفريقك! نص النقاط وبدون وسائل مساعدة';
+    else if (turns && !cap && mine===null) note='🎯 دور فريقك: أول جواب من الفريق ينحسب';
     const used=(st.ll&&st.ll[me.team])||{};
-    const lifeBtns = isCap && st.life ? `<div class="life">${Object.keys(LIFE).map(k=>`<button class="lifebtn" data-k="${k}" ${used[k]||lock?'disabled':''}>${LIFE[k]}</button>`).join('')}</div>` : '';
+    const lifeBtns = isCap && st.life && (!turns || (myTurn && st.stg==='main')) ? `<div class="life">${Object.keys(LIFE).map(k=>`<button class="lifebtn" data-k="${k}" ${used[k]||lock?'disabled':''}>${LIFE[k]}</button>`).join('')}</div>` : '';
     c.innerHTML=`<div class="qtag">${esc(st.cat)} · ${esc(LV[st.lv]||'')} · سؤال ${Number(st.n)} من ${Number(st.of)}</div>
       <div class="timer"><div class="tbar"><div class="tfill" id="pFill"></div></div><div class="tnum" id="pNum"></div></div>
       <div class="qtext">${esc(st.q)}</div>
@@ -909,9 +990,12 @@ function renderPlayer(){
   } else if (st.ph==='rev'){
     const cap=st.md==='captain', mine = myAns && myAns.q===st.id ? myAns.i : null;
     const g=(st.g&&pp&&st.g[pp])||0, tg=(st.tg&&st.tg[me.team])||0, ok = mine===st.a;
-    const good = cap ? tg>0 : ok;
+    const turns=st.mo==='turns', good = (cap||turns) ? tg>0 : ok;
     if (lastSoundFor!==st.id){ lastSoundFor=st.id; (good?sndOk:sndBad)(); }
-    const msg = cap
+    const anyWin=Object.values(st.tg||{}).some(Boolean);
+    const msg = turns
+      ? (tg ? `✔ فريقك جاوب صح! +${tg}` : anyWin ? 'الفريق الثاني جاب الجواب' : '✘ محد جاب الجواب')
+      : cap
       ? (tg ? `✔ فريقك جاوب صح! +${tg} للفريق` : '✘ فريقك ما جاب الجواب') + (mine===null ? '' : ok ? ' · واقتراحك كان صح' : ' · واقتراحك كان غلط')
       : (mine===null ? 'ما جاوبت على هذا السؤال' : ok ? `✔ صح! +${g} نقطة` : '✘ غلط');
     c.innerHTML=`<div class="qtext">${esc(st.q)}</div>
