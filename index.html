@@ -279,6 +279,8 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
 
 <div class="toast" id="toast" role="status"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="realtime.js"></script>
 <script src="questions.js"></script>
 <script>
 "use strict";
@@ -576,7 +578,7 @@ async function openLobby(){
   $('lobbyCode').textContent=S.code; show('lobby');
   $('lobbyErr').hidden=true;
   const api=await getRoomApi();
-  if (!api){ $('lobbyErr').textContent='الجوالات ما تكدر تتصل بهذي الصفحة هنا. هذا الوضع يشتغل للي مسجلين دخول ومدعوين للصفحة، أو بعد ما ننقل اللعبة لموقعك. تكدر تلعب بوضع «شاشة وحدة».'; $('lobbyErr').hidden=false; return; }
+  if (!api){ $('lobbyErr').textContent='ما كدرنا نتصل بخادم اللعبة. تأكد من الإنترنت وحدّث الصفحة، أو العب بوضع «شاشة وحدة».'; $('lobbyErr').hidden=false; return; }
   try {
     if (!room || room.name!=='quiz-'+S.code){ if (room) try{ await room.leave(); }catch(e){} room=await api.join('quiz-'+S.code); room.onPeers(onBoardPeers); }
     pushState(); renderLobby();
@@ -661,7 +663,7 @@ $('joinFind').onclick = async () => {
   if (code.length!==4) return joinErr('الرمز 4 أرقام، تلكاه على شاشة اللعبة.');
   $('joinErr').hidden=true; $('joinFind').disabled=true; $('joinFind').textContent='ندوّر...';
   const api=await getRoomApi();
-  if (!api){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('جوالك ما يكدر يتصل من هنا. لازم تكون مسجل دخول ومدعو لهذي الصفحة، أو تلعبون بوضع «شاشة وحدة».'); }
+  if (!api){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('ما كدرنا نتصل بخادم اللعبة. تأكد من الإنترنت وحدّث الصفحة.'); }
   try { if (room) await room.leave(); room=await api.join('quiz-'+code); } catch(e){ $('joinFind').disabled=false; $('joinFind').textContent='دوّر على اللعبة'; return joinErr('ما كدرنا نتصل، جرّب مرة ثانية.'); }
   me.code=code;
   const t0=Date.now();
@@ -685,7 +687,8 @@ $('joinGo').onclick = () => {
   room.onPeers(onPlayerPeers);
   show('player'); renderPlayer();
 };
-function onPlayerPeers(){ const b=findBoard(); if (b){ boardPeer=b.peer; if (b.presence.s!==lastSt){ lastSt=b.presence.s; renderPlayer(); } } else renderPlayer(); }
+let lastStJson='';
+function onPlayerPeers(){ const b=findBoard(); if (b){ boardPeer=b.peer; const j=JSON.stringify(b.presence.s); if (j!==lastStJson){ lastStJson=j; lastSt=b.presence.s; renderPlayer(); } } else if (!lastSt) renderPlayer(); }
 function myPeer(){ const m=peersNow().find(p=>p.sameTab); return m?m.peer:null; }
 let pTimer=null;
 function renderPlayer(){
