@@ -1,48 +1,70 @@
-// اتصال الجوالات بالموقع: يربط وضع «كل لاعب على جواله» بـ Supabase Realtime (Presence).
+// اتصال الجوالات بالموقع عن طريق Supabase Realtime (رسائل Broadcast).
 // يوفّر نفس واجهة claude.use('room') اللي تستخدمها اللعبة، فكود اللعبة ما يتغير.
+// كل جهاز يرسل حالته عند كل تغيير ونبضة كل 6 ثواني؛ الجهاز اللي يسكت 20 ثانية ينحذف.
 (function () {
   if (window.claude && window.claude.use) return; // داخل Claude: نستخدم الغرفة المدمجة
   var SUPABASE_URL = 'https://ddxbnmctuyrrccnvwndo.supabase.co';
   var SUPABASE_KEY = 'sb_publishable_Em8IhbBIjgPOqUuCuI7K0w_2ScV7bbj'; // مفتاح عام، مصمم للمتصفح
+  var BEAT_MS = 6000, DROP_MS = 20000;
   var client = null;
   function getClient() {
     if (!client && window.supabase && window.supabase.createClient) {
-      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 10 } } });
+      client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 20 } } });
     }
     return client;
   }
   var myPeer = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
   function makeRoom(name, channel) {
-    var me = {}, subs = [], cache = [], prev = {};
+    var me = {}, others = {}, subs = [], cache = [], beat = null, prune = null, sendT = null;
+    function freezeMe() { return Object.freeze(Object.assign({}, me)); }
     function snapshot() {
-      var st = channel.presenceState(), out = [], seen = {};
-      Object.keys(st).forEach(function (key) {
-        var metas = st[key]; if (!metas || !metas.length) return;
-        var m = Object.assign({}, metas[metas.length - 1]); delete m.presence_ref;
-        var p = m.p || {}, j = JSON.stringify(p);
-        var keep = prev[key] && prev[key].j === j ? prev[key].obj : Object.freeze(p);
-        prev[key] = { j: j, obj: keep }; seen[key] = 1;
-        out.push({ peer: key, by: null, isMe: key === myPeer, sameTab: key === myPeer, kind: 'viewer', guest: false, presence: key === myPeer ? Object.freeze(Object.assign({}, me)) : keep, updatedAt: Date.now() });
+      var out = [{ peer: myPeer, by: null, isMe: true, sameTab: true, kind: 'viewer', guest: false, presence: freezeMe(), updatedAt: Date.now() }];
+      Object.keys(others).forEach(function (k) {
+        var o = others[k];
+        out.push({ peer: k, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false, presence: o.obj, updatedAt: o.t });
       });
-      if (!seen[myPeer]) out.push({ peer: myPeer, by: null, isMe: true, sameTab: true, kind: 'viewer', guest: false, presence: Object.freeze(Object.assign({}, me)), updatedAt: Date.now() });
       return out;
     }
     function fire() { cache = snapshot(); subs.forEach(function (f) { try { f({ peers: cache, joined: [], left: [], updated: [] }); } catch (e) {} }); }
-    channel.on('presence', { event: 'sync' }, fire);
-    var trackT = null;
-    function track() { clearTimeout(trackT); trackT = setTimeout(function () { channel.track({ p: me }).catch(function () {}); }, 60); }
+    function send(extra) {
+      var payload = Object.assign({ peer: myPeer, p: me }, extra || {});
+      return channel.send({ type: 'broadcast', event: 'p', payload: payload }).catch(function () {});
+    }
+    function sendSoon() { clearTimeout(sendT); sendT = setTimeout(function () { send(); }, 50); }
+
+    channel.on('broadcast', { event: 'p' }, function (msg) {
+      var d = msg && msg.payload; if (!d || !d.peer || d.peer === myPeer) return;
+      if (d.bye) { delete others[d.peer]; fire(); return; }
+      var p = d.p || {}, j = JSON.stringify(p), old = others[d.peer];
+      if (!old || old.j !== j) others[d.peer] = { j: j, obj: Object.freeze(p), t: Date.now(), seen: Date.now() };
+      else old.seen = Date.now();
+      if (d.hello) send(); // جهاز جديد دخل: نعرّفه بنفسنا
+      fire();
+    });
+
+    function start() {
+      send({ hello: true });
+      beat = setInterval(function () { send(); }, BEAT_MS);
+      prune = setInterval(function () {
+        var now = Date.now(), changed = false;
+        Object.keys(others).forEach(function (k) { if (now - others[k].seen > DROP_MS) { delete others[k]; changed = true; } });
+        if (changed) fire();
+      }, 3000);
+      window.addEventListener('pagehide', function () { send({ bye: true }); });
+    }
+
     return {
-      name: name,
+      name: name, _start: start,
       presence: function (patch) {
         me = Object.assign({}, me, patch);
         Object.keys(patch).forEach(function (k) { if (patch[k] === null) delete me[k]; });
-        track(); fire(); return Promise.resolve();
+        sendSoon(); fire(); return Promise.resolve();
       },
       peers: function () { return cache; },
       onPeers: function (f) { subs.push(f); setTimeout(function () { f({ peers: cache, joined: cache, left: [], updated: [] }); }, 0); return function () { subs = subs.filter(function (x) { return x !== f; }); }; },
       connected: function () { return true; },
-      leave: function () { return client.removeChannel(channel).then(function () {}); },
+      leave: function () { clearInterval(beat); clearInterval(prune); return send({ bye: true }).then(function () { return client.removeChannel(channel); }).then(function () {}); },
       emit: function () { return Promise.resolve(); },
       on: function () { return function () {}; }
     };
@@ -52,11 +74,11 @@
     join: function (name) {
       return new Promise(function (resolve, reject) {
         var c = getClient(); if (!c) return reject({ code: 'not_granted' });
-        var channel = c.channel(name, { config: { presence: { key: myPeer } } });
+        var channel = c.channel(name, { config: { broadcast: { self: false, ack: false } } });
         var room = makeRoom(name, channel), done = false;
         var t = setTimeout(function () { if (!done) { done = true; reject({ code: 'upstream_error' }); } }, 10000);
         channel.subscribe(function (status) {
-          if (status === 'SUBSCRIBED' && !done) { done = true; clearTimeout(t); resolve(room); }
+          if (status === 'SUBSCRIBED' && !done) { done = true; clearTimeout(t); room._start(); resolve(room); }
           if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !done) { done = true; clearTimeout(t); reject({ code: 'upstream_error' }); }
         });
       });
