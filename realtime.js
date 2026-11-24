@@ -7,6 +7,9 @@
   var SUPABASE_KEY = 'sb_publishable_Em8IhbBIjgPOqUuCuI7K0w_2ScV7bbj'; // مفتاح عام، مصمم للمتصفح
   var BEAT_MS = 6000, DROP_MS = 20000;
   var client = null;
+  var RT = window.__rt = { v: 'v3', status: 'ما بدأ', others: 0, err: '' };
+  function show(){ var t='الاتصال: '+RT.status+' · أجهزة ثانية: '+RT.others+' · '+(window.supabase?'مكتبة '+(window.__sbver||'?'):'المكتبة ما انحملت')+' · '+RT.v+(RT.err?' · '+RT.err:''); var els=document.querySelectorAll('.rtStatus'); for(var i=0;i<els.length;i++) els[i].textContent=t; }
+  setInterval(show, 1000);
   function getClient() {
     if (!client && window.supabase && window.supabase.createClient) {
       client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { params: { eventsPerSecond: 20 } } });
@@ -26,10 +29,10 @@
       });
       return out;
     }
-    function fire() { cache = snapshot(); subs.forEach(function (f) { try { f({ peers: cache, joined: [], left: [], updated: [] }); } catch (e) {} }); }
+    function fire() { cache = snapshot(); RT.others = Object.keys(others).length; subs.forEach(function (f) { try { f({ peers: cache, joined: [], left: [], updated: [] }); } catch (e) {} }); }
     function send(extra) {
       var payload = Object.assign({ peer: myPeer, p: me }, extra || {});
-      return channel.send({ type: 'broadcast', event: 'p', payload: payload }).catch(function () {});
+      return channel.send({ type: 'broadcast', event: 'p', payload: payload }).then(function (r) { if (r && r !== 'ok') RT.err = 'إرسال: ' + r; }).catch(function (e) { RT.err = 'إرسال: ' + (e && e.message || e); });
     }
     function sendSoon() { clearTimeout(sendT); sendT = setTimeout(function () { send(); }, 50); }
 
@@ -77,7 +80,9 @@
         var channel = c.channel(name, { config: { broadcast: { self: false, ack: false } } });
         var room = makeRoom(name, channel), done = false;
         var t = setTimeout(function () { if (!done) { done = true; reject({ code: 'upstream_error' }); } }, 10000);
-        channel.subscribe(function (status) {
+        RT.status = 'يتصل...';
+        channel.subscribe(function (status, err) {
+          RT.status = status === 'SUBSCRIBED' ? 'متصل' : status; if (err) RT.err = String(err.message || err).slice(0, 80);
           if (status === 'SUBSCRIBED' && !done) { done = true; clearTimeout(t); room._start(); resolve(room); }
           if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && !done) { done = true; clearTimeout(t); reject({ code: 'upstream_error' }); }
         });

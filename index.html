@@ -196,6 +196,7 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
     <div class="code" id="lobbyCode">----</div>
     <p class="muted">كل لاعب يفتح نفس الرابط من جواله، يضغط «انضم من جوالك» ويكتب الرمز</p>
     <div class="banner bad" id="lobbyErr" hidden></div>
+    <div class="rtStatus muted small" style="direction:rtl"></div>
     <div class="label" id="lobbyCount">اللاعبين: 0</div>
     <div id="lobbyTeams" class="board"></div>
     <div class="row c" style="margin-top:14px"><button class="btn gold big" id="lobbyGo">اختيار القسم</button><button class="btn ghost" id="lobbyBack">رجوع للإعدادات</button></div>
@@ -256,6 +257,7 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
   <div class="card center" style="display:flex;flex-direction:column;gap:12px;align-items:center">
     <h2>انضم للعبة</h2>
     <div class="banner bad" id="joinErr" hidden style="width:100%"></div>
+    <div class="rtStatus muted small"></div>
     <div id="joinStep1" style="display:flex;flex-direction:column;gap:12px;align-items:center;width:100%">
       <label for="codeIn" class="muted">رمز اللعبة (4 أرقام على الشاشة)</label>
       <input id="codeIn" class="codein" inputmode="numeric" maxlength="4" autocomplete="off">
@@ -279,8 +281,11 @@ button.opt:hover:not(:disabled){border-color:var(--gold)}
 
 <div class="toast" id="toast" role="status"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="realtime.js?v=2"></script>
+<script>
+// يحمّل مكتبة Supabase: يجرب نسخ أحدث أولاً، وإذا وحدة ما انحملت ينتقل للي بعدها
+(function(){var vs=['2.58.0','2.56.1','2.54.0','2.50.0','2.45.4'],i=0;function next(){if(window.supabase||i>=vs.length){document.dispatchEvent(new Event('sb-ready'));return;}var v=vs[i++],s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@'+v+'/dist/umd/supabase.js';s.onload=function(){if(window.supabase){window.__sbver=v;document.dispatchEvent(new Event('sb-ready'));}else next();};s.onerror=next;document.head.appendChild(s);}next();})();
+</script>
+<script src="realtime.js?v=3"></script>
 <script src="questions.js"></script>
 <script>
 "use strict";
