@@ -13,3 +13,7 @@
 - `bank-src/`: مصادر الأسئلة حسب القسم والمستوى، وسكربت `build_bank.js` اللي يفحصها ويجمعها بملف `questions.js`.
 - `src/app.html`: مصدر اللعبة. بعد أي تعديل عليه، ابنِ صفحة الموقع بالأمر: `python3 src/build_site.py src/app.html index.html`.
 - `realtime.js`: اتصال الجوالات عن طريق Supabase Realtime.
+
+## الرخصة
+- **الكود:** رخصة MIT، شوف ملف `LICENSE`.
+- **الأسئلة** (`questions.js` و`bank-src/`): رخصة CC BY-SA 4.0، شوف ملف `LICENSE-QUESTIONS.md`.
